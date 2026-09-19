@@ -49,3 +49,5 @@ next-env.d.ts
 /mobile/native/build/
 *.keystore
 *.apk
+
+/public/__review-check/

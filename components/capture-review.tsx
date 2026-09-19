@@ -65,7 +65,7 @@ export function CaptureReview({ capture, open, onOpenChange, mode, setMode }: { 
     } catch (error) { toast.error((error as Error).message || "Speichern fehlgeschlagen."); } finally { setSaving(false); }
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="review-dialog" showCloseButton={false}>
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="review-dialog" showCloseButton={false} fullScreen>
     <header className="review-header"><button className="back-button" aria-label="Zur Kamera" onClick={() => onOpenChange(false)}><ArrowLeft size={20} /><span>Zur Kamera</span></button><div><DialogTitle>Passt die Perspektive?</DialogTitle><DialogDescription>{capture.width} × {capture.height} px · JPG</DialogDescription></div><span className="review-header-spacer" /></header>
     <PhotoZoom capture={capture} opacity={visible ? opacity : 0} />
     <footer className="review-footer"><div className="review-inner">
