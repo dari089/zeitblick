@@ -26,7 +26,11 @@ export function composePhoto(
 ) {
   ctx.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
   if (!includeOverlay || !reference || opacity === 0) return;
-  const layer = overlayPlacement(crop.width, crop.height, reference.width, reference.height, transform);
+  paintOverlay(ctx, crop.width, crop.height, reference, opacity, transform);
+}
+
+export function paintOverlay(ctx: CanvasRenderingContext2D, width: number, height: number, reference: { image: CanvasImageSource; width: number; height: number }, opacity: number, transform: Transform) {
+  const layer = overlayPlacement(width, height, reference.width, reference.height, transform);
   ctx.save();
   ctx.translate(layer.centerX, layer.centerY);
   ctx.rotate(transform.rotation * Math.PI / 180);

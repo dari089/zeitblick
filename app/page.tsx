@@ -1,23 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, CameraOff, Check, ChevronRight, Download, Eye, EyeOff, Focus, Grid3X3, ImagePlus, Layers2, LoaderCircle, LockKeyhole, Move, RotateCcw, RotateCw, ShieldCheck, Smartphone, SwitchCamera, X, ZoomIn } from "lucide-react";
-import { Slider } from "@/components/ui/slider";
+import { Camera, CameraOff, Check, Eye, EyeOff, Grid3X3, ImagePlus, Layers2, LoaderCircle, LockKeyhole, Move, RotateCcw, RotateCw, ShieldCheck, Smartphone, SwitchCamera, X, ZoomIn, SlidersHorizontal, Maximize2, Minimize2, ChevronDown } from "lucide-react";
+import { LabeledSlider } from "@/components/labeled-slider";
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { SaveModeControl } from "@/components/save-mode";
+import { CaptureReview } from "@/components/capture-review";
+import { canvasBlob, type PhotoCapture, type SaveMode } from "@/lib/photo-types";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Toaster, toast } from "sonner";
-import { coverCrop, overlayPlacement, composePhoto, type Transform } from "@/lib/capture";
+import { androidBridge } from "@/lib/android";
+import { coverCrop, overlayPlacement, composePhoto, paintOverlay, type Transform } from "@/lib/capture";
 
 type ReferenceImage = { url: string; name: string; width: number; height: number; image: HTMLImageElement };
-type Capture = { url: string; blob: Blob; filename: string; width: number; height: number; withOverlay: boolean; opacity: number };
 type CameraState = "idle" | "starting" | "ready" | "error";
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
-function LabeledSlider(props: React.ComponentProps<typeof Slider>) {
-  return <Slider {...props} ref={node => {
-    const thumb = node?.querySelector('[role="slider"]');
-    if (thumb && props["aria-labelledby"]) thumb.setAttribute("aria-labelledby", String(props["aria-labelledby"]));
-  }} />;
-}
 const INITIAL: Transform = { x: 0, y: 0, scale: 1, rotation: 0 };
 
 export default function Home() {
@@ -39,21 +37,25 @@ export default function Home() {
   const [loadingImage, setLoadingImage] = useState(false);
   const [opacity, setOpacity] = useState(50);
   const [overlayVisible, setOverlayVisible] = useState(true);
-  const [includeOverlay, setIncludeOverlay] = useState(false);
+  const [saveMode, setSaveMode] = useState<SaveMode>("clean");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [nativeApp, setNativeApp] = useState(false);
+  useEffect(() => setNativeApp(Boolean(androidBridge())), []);
   const [transform, setTransform] = useState<Transform>(INITIAL);
   const [locked, setLocked] = useState(false);
   const [grid, setGrid] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [flash, setFlash] = useState(false);
-  const [capture, setCapture] = useState<Capture | null>(null);
+  const [capture, setCapture] = useState<PhotoCapture | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(null);
   const [draggingFile, setDraggingFile] = useState(false);
   const hasOverlay = Boolean(reference);
-  const ratio = reference ? reference.width / reference.height : videoSize.width ? videoSize.width / videoSize.height : 4 / 3;
-  const frameHeight = Math.min(stageSize.height, stageSize.width / ratio);
-  const frameWidth = frameHeight * ratio;
+  const ratio = stageSize.width / Math.max(1, stageSize.height);
+  const frameHeight = stageSize.height;
+  const frameWidth = stageSize.width;
   const crop = videoSize.width ? coverCrop(videoSize.width, videoSize.height, ratio) : null;
   const placement = reference ? overlayPlacement(frameWidth, frameHeight, reference.width, reference.height, transform) : null;
 
@@ -65,7 +67,7 @@ export default function Home() {
     return () => observer.disconnect();
   }, []);
   useEffect(() => () => { if (reference) URL.revokeObjectURL(reference.url); }, [reference]);
-  useEffect(() => () => { if (capture) URL.revokeObjectURL(capture.url); }, [capture]);
+  useEffect(() => () => { if (capture) { URL.revokeObjectURL(capture.url); if (capture.layerUrl) URL.revokeObjectURL(capture.layerUrl); } }, [capture]);
   useEffect(() => {
     function closeCamera() {
       requestRef.current++;
@@ -75,11 +77,13 @@ export default function Home() {
     function onPageHide() { closeCamera(); setCameraState("idle"); }
     const onInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPrompt); };
     window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("zeitblick-pause", onPageHide);
     window.addEventListener("beforeinstallprompt", onInstall);
     return () => {
       closeCamera();
       sourceRequestRef.current++;
       window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("zeitblick-pause", onPageHide);
       window.removeEventListener("beforeinstallprompt", onInstall);
     };
   }, []);
@@ -166,7 +170,7 @@ export default function Home() {
     sourceRequestRef.current++;
     setLoadingImage(false);
     setReference(null);
-    setIncludeOverlay(false);
+    setSaveMode("clean");
     setTransform(INITIAL);
     setLocked(false);
   }
@@ -198,40 +202,38 @@ export default function Home() {
   async function takePhoto() {
     const video = videoRef.current;
     if (captureLockRef.current || cameraState !== "ready" || !video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
-    captureLockRef.current = true;
-    setCapturing(true);
+    captureLockRef.current = true; setCapturing(true);
     try {
       const source = coverCrop(video.videoWidth, video.videoHeight, ratio);
-      const canvas = document.createElement("canvas");
-      canvas.width = source.width;
-      canvas.height = source.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Kein Bildspeicher verfügbar");
-      const withOverlay = Boolean(includeOverlay && reference);
-      composePhoto(ctx, video, source, reference, includeOverlay, opacity, transform);
-      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("Bild konnte nicht erstellt werden")), "image/jpeg", 0.96));
-      const date = new Date();
-      const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}-${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}${String(date.getSeconds()).padStart(2, "0")}-${date.getMilliseconds()}`;
-      setCapture({ url: URL.createObjectURL(blob), blob, filename: `zeitblick-${stamp}${withOverlay ? "-mit-vorlage" : ""}.jpg`, width: canvas.width, height: canvas.height, withOverlay, opacity });
-      setFlash(true);
-      window.setTimeout(() => setFlash(false), 180);
-      setReviewOpen(true);
+      const raw = document.createElement("canvas"); raw.width = source.width; raw.height = source.height;
+      const ctx = raw.getContext("2d"); if (!ctx) throw new Error("Kein Bildspeicher");
+      // Freeze camera pixels exactly once. Both exports use this same instant.
+      composePhoto(ctx, video, source, null, false, 0, transform);
+      let layer: HTMLCanvasElement | null = null;
+      if (reference) {
+        layer = document.createElement("canvas"); layer.width = raw.width; layer.height = raw.height;
+        const layerCtx = layer.getContext("2d"); if (!layerCtx) throw new Error("Kein Bildspeicher");
+        paintOverlay(layerCtx, raw.width, raw.height, reference, 100, transform);
+      }
+      const [blob, layerBlob] = await Promise.all([canvasBlob(raw), layer ? canvasBlob(layer, "image/png") : Promise.resolve(null)]);
+      const id = new Date().toISOString().replace(/[:.]/g, "-");
+      setCapture({ id, raw, layer, blob, url: URL.createObjectURL(blob), layerUrl: layerBlob ? URL.createObjectURL(layerBlob) : null, width: raw.width, height: raw.height, opacity, filename: `zeitblick-${id}` });
+      setFlash(true); window.setTimeout(() => setFlash(false), 180); setReviewOpen(true);
     } catch { toast.error("Das Foto konnte nicht erstellt werden. Bitte versuche es erneut."); }
     finally { captureLockRef.current = false; setCapturing(false); }
   }
 
-  async function savePhoto() {
-    if (!capture) return;
-    const file = new File([capture.blob], capture.filename, { type: "image/jpeg" });
-    if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-      try { await navigator.share({ files: [file], title: "Zeitblick Foto" }); return; }
-      catch (error) { if ((error as DOMException).name === "AbortError") return; }
-    }
-    const link = document.createElement("a");
-    link.href = capture.url;
-    link.download = capture.filename;
-    document.body.appendChild(link); link.click(); link.remove();
-    toast.success("Download gestartet. Du findest das Foto in deinen Downloads.");
+  useEffect(() => {
+    const update = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", update);
+    return () => document.removeEventListener("fullscreenchange", update);
+  }, []);
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      else toast.info("Für die Vollbildansicht füge Zeitblick zum Home-Bildschirm hinzu.");
+    } catch { toast.info("Öffne Zeitblick vom Home-Bildschirm für die Vollbildansicht."); }
   }
 
   useEffect(() => {
@@ -248,7 +250,7 @@ export default function Home() {
         for (const key of ["visible", "includeInPhoto"]) if (value[key] !== undefined && typeof value[key] !== "boolean") throw new Error("Schalter benötigen true oder false.");
         if (typeof value.opacity === "number") setOpacity(value.opacity);
         if (typeof value.visible === "boolean") setOverlayVisible(value.visible);
-        if (typeof value.includeInPhoto === "boolean") setIncludeOverlay(value.includeInPhoto);
+        if (typeof value.includeInPhoto === "boolean") setSaveMode(value.includeInPhoto ? "overlay" : "clean");
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         return { applied: value };
       } }, { signal: lifecycle.signal })).catch(() => {});
@@ -257,43 +259,40 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="app-shell">
-      <Toaster position="bottom-center" theme="dark" richColors />
-      <header className="app-header">
-        <a className="brand" href="/" aria-label="Zeitblick Startseite"><span className="brand-symbol"><Layers2 size={24} strokeWidth={1.65} /></span><span>zeitblick<span className="brand-period">.</span></span></a>
-        <span className="header-divider" /><span className="app-category">OVERLAY KAMERA</span>
-        <div className="header-actions"><span className="private-label"><ShieldCheck size={15} /> Lokal. Privat. Werbefrei.</span><button className="icon-button" onClick={() => setHelpOpen(true)} aria-label="App installieren und Hilfe" title="App installieren und Hilfe"><Smartphone size={20} /></button></div>
-      </header>
-      <main className="workspace">
-        <div className="workspace-heading"><div><div className="eyebrow">DAMALS IM BLICK. HEUTE IM BILD.</div><h1>Die Perspektive von damals.</h1></div><span className="workspace-note">Dein Motiv. Dein Moment.</span></div>
-        <div className="workspace-grid">
-          <section className="camera-panel" aria-label="Kamera und Sucher">
-            <div className="camera-toolbar"><div className="viewfinder-title"><Focus size={17} /><span>Sucher</span><span className={`camera-status ${cameraState === "ready" ? "active" : ""}`}>{cameraState === "ready" ? "LIVE" : cameraState === "starting" ? "VERBINDET" : "BEREIT"}</span></div><div className="toolbar-actions"><button className={`icon-button ${grid ? "selected" : ""}`} onClick={() => setGrid(!grid)} aria-label="Hilfsraster" aria-pressed={grid} title="Hilfsraster"><Grid3X3 size={18} /></button><button className="icon-button" disabled={cameraState === "starting"} onClick={() => startCamera(facing === "environment" ? "user" : "environment")} aria-label="Kamera wechseln" title="Kamera wechseln"><SwitchCamera size={20} /></button>{cameraState === "ready" && <button className="icon-button" onClick={stopCamera} aria-label="Kamera ausschalten" title="Kamera ausschalten"><CameraOff size={18} /></button>}</div></div>
-            <div className={`stage-area ${draggingFile ? "file-over" : ""}`} ref={stageRef} onDragOver={event => { event.preventDefault(); setDraggingFile(true); }} onDragLeave={() => setDraggingFile(false)} onDrop={event => { event.preventDefault(); setDraggingFile(false); const file = event.dataTransfer.files[0]; if (file) loadReference(file); }}>
-              <div className={`viewfinder ${reference && !locked && overlayVisible ? "movable" : ""}`} style={{ width: frameWidth, height: frameHeight }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onLostPointerCapture={onPointerEnd} tabIndex={reference ? 0 : -1} role="group" aria-label="Live-Sucher. Vorlage mit den Pfeiltasten verschieben." onKeyDown={event => { if (!reference || locked || !overlayVisible) return; const moves: Record<string, [number, number]> = { ArrowLeft: [-0.005, 0], ArrowRight: [0.005, 0], ArrowUp: [0, -0.005], ArrowDown: [0, 0.005] }; if (moves[event.key]) { event.preventDefault(); const [dx, dy] = moves[event.key]; setTransform(t => ({ ...t, x: Math.max(-1, Math.min(1, t.x + dx * (event.shiftKey ? 5 : 1))), y: Math.max(-1, Math.min(1, t.y + dy * (event.shiftKey ? 5 : 1))) })); } }}>
-                <video ref={videoRef} autoPlay playsInline muted className={cameraState === "ready" ? "live-video" : "live-video inactive"} onResize={() => { const video = videoRef.current; if (video?.videoWidth && video?.videoHeight) setVideoSize({ width: video.videoWidth, height: video.videoHeight }); }} />
-                {reference && placement && <img className="overlay-image" src={reference.url} alt="Deine historische Vorlage" draggable={false} style={{ width: placement.width, height: placement.height, left: placement.centerX, top: placement.centerY, transform: `translate(-50%, -50%) rotate(${transform.rotation}deg)`, opacity: overlayVisible ? opacity / 100 : 0 }} />}
-                {grid && <div className="thirds-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
-                <div className="frame-corners" aria-hidden="true"><i /><i /><i /><i /></div>
-                {flash && <div className="capture-flash" />}
-              </div>
-              {cameraState !== "ready" && <div className={`camera-empty ${reference ? "with-reference" : ""}`}><div className="camera-empty-content"><span className="empty-camera-icon">{cameraState === "starting" ? <LoaderCircle className="spin" size={30} /> : cameraState === "error" ? <CameraOff size={30} strokeWidth={1.4} /> : <Camera size={32} strokeWidth={1.35} />}</span><h2>{cameraState === "starting" ? "Deine Kamera wird gestartet …" : cameraState === "error" ? "Noch kein Kamerabild" : "Ein neuer Blick auf damals."}</h2><p>{cameraState === "starting" ? "Bitte erlaube den Kamerazugriff in deinem Browser." : cameraError || "Starte die Kamera und lege dein altes Foto über die heutige Aussicht."}</p><button className="primary-button start-camera" onClick={() => cameraState === "starting" ? stopCamera() : startCamera()}>{cameraState === "starting" ? "Abbrechen" : <><Camera size={18} />{cameraState === "error" ? "Erneut versuchen" : "Kamera starten"}</>}</button>{cameraState !== "error" && <span className="camera-permission-note"><LockKeyhole size={12} /> Kamera erst nach deiner Freigabe</span>}</div></div>}
-              {cameraState === "ready" && <div className="frame-label"><span>{facing === "user" ? "Frontkamera" : "Rückkamera"}</span><span>{crop ? `${crop.width} × ${crop.height}` : ""}</span></div>}
-            </div>
-            <div className="viewfinder-bottom"><span>{reference ? <><Move size={14} />{locked ? "Vorlage ist fixiert" : "Ziehen & mit zwei Fingern zoomen"}</> : <><ImagePlus size={14} />Wähle ein Foto als Vorlage</>}</span><button disabled={!reference} className={`quiet-button ${overlayVisible && reference ? "highlight" : ""}`} onClick={() => setOverlayVisible(!overlayVisible)} aria-pressed={overlayVisible && Boolean(reference)}>{overlayVisible ? <Eye size={16} /> : <EyeOff size={16} />}<span>{overlayVisible ? "Vorlage sichtbar" : "Vorlage ausgeblendet"}</span></button></div>
-            <div className="mobile-quick"><div className="mobile-quick-top"><button onClick={() => fileRef.current?.click()} disabled={loadingImage}><ImagePlus size={17} />{loadingImage ? "Lädt …" : reference ? "Bild wechseln" : "Vorlage"}</button><div className="mobile-opacity"><label id="mobile-opacity-label">Deckkraft <span>{Math.round(opacity)} %</span></label><LabeledSlider aria-labelledby="mobile-opacity-label" className="control-slider" min={0} max={100} step={1} value={[opacity]} onValueChange={([value]) => setOpacity(value)} disabled={!reference} /></div></div><div className="mobile-export"><label htmlFor="mobile-include">Vorlage mitspeichern</label><Switch id="mobile-include" className="app-switch" checked={includeOverlay && hasOverlay} onCheckedChange={setIncludeOverlay} disabled={!reference} /></div></div>
-            <div className="capture-bar"><div className="last-photo-wrap"><button className={`last-photo ${capture ? "has-photo" : ""}`} disabled={!capture} onClick={() => setReviewOpen(true)} aria-label="Letztes Foto ansehen">{capture ? <img src={capture.url} alt="Letztes Foto" /> : <ImagePlus size={22} strokeWidth={1.4} />}</button><span>{capture ? "Letztes Foto" : "Dein Foto"}</span></div><button className="shutter" disabled={cameraState !== "ready" || capturing} onClick={takePhoto} aria-label="Foto aufnehmen"><span>{capturing ? <LoaderCircle className="spin" size={28} /> : <Camera size={28} strokeWidth={1.6} />}</span></button><div className="export-indicator"><span className={`export-indicator-icon ${includeOverlay && reference ? "with-overlay" : ""}`}>{includeOverlay && reference ? <Layers2 size={18} /> : <Check size={20} />}</span><span>{includeOverlay && reference ? "Mit Vorlage" : "Ohne Vorlage"}<small>im fertigen Foto</small></span></div></div>
-          </section>
-          <aside className="controls-panel" aria-label="Overlay Einstellungen">
-            <section className="control-section reference-section"><div className="section-label"><span className="step-number">01</span><h2>Deine Vorlage</h2><span className="section-icon"><Layers2 size={17} /></span></div><input ref={fileRef} className="sr-only" type="file" accept="image/*" aria-label="Vorlagenbild auswählen" onChange={event => { const file = event.target.files?.[0]; if (file) loadReference(file); event.target.value = ""; }} />{reference ? <div className="reference-selected"><img src={reference.url} alt="Geladene Vorlage" /><div><strong title={reference.name}>{reference.name}</strong><span>{reference.width} × {reference.height} px</span><button className="text-button" onClick={() => fileRef.current?.click()}>Bild wechseln</button></div><button className="icon-button" onClick={removeReference} aria-label="Vorlage entfernen"><X size={16} /></button></div> : <button className="upload-area" disabled={loadingImage} onClick={() => fileRef.current?.click()} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) loadReference(file); }}><span className="upload-icon">{loadingImage ? <LoaderCircle className="spin" size={23} /> : <ImagePlus size={23} strokeWidth={1.5} />}</span><strong>{loadingImage ? "Bild wird geladen …" : "Vorlage auswählen"}</strong><span>Ein altes Foto. Ein neuer Blick.</span><small>JPG, PNG oder WebP</small></button>}</section>
-            <section className="control-section"><div className="section-label"><span className="step-number">02</span><h2>Ausrichten</h2><button className="icon-button reset-button" disabled={!hasOverlay} onClick={() => { setTransform(INITIAL); setLocked(false); }} aria-label="Ausrichtung zurücksetzen" title="Ausrichtung zurücksetzen"><RotateCcw size={16} /></button></div><div className={`adjustments ${!hasOverlay ? "unavailable" : ""}`}><div className="range-heading"><label id="opacity-label">Deckkraft</label><output className="value-pill">{Math.round(opacity)}<span> %</span></output></div><LabeledSlider className="control-slider opacity-slider" aria-labelledby="opacity-label" value={[opacity]} onValueChange={([value]) => setOpacity(value)} min={0} max={100} step={1} disabled={!hasOverlay} /><div className="range-limits"><span>Nur Kamera</span><span>Nur Vorlage</span></div><div className="range-heading compact"><label id="scale-label"><ZoomIn size={15} />Größe</label><output>{Math.round(transform.scale * 100)} %</output></div><LabeledSlider className="control-slider secondary-slider" aria-labelledby="scale-label" value={[transform.scale * 100]} onValueChange={([value]) => setTransform(t => ({ ...t, scale: value / 100 }))} min={25} max={400} step={1} disabled={!hasOverlay || locked} /><div className="range-heading compact"><label id="rotation-label"><RotateCw size={15} />Drehung</label><output>{Math.round(transform.rotation)}°</output></div><LabeledSlider className="control-slider secondary-slider" aria-labelledby="rotation-label" value={[transform.rotation]} onValueChange={([value]) => setTransform(t => ({ ...t, rotation: value }))} min={-180} max={180} step={1} disabled={!hasOverlay || locked} /><div className="lock-row"><label htmlFor="lock-overlay"><LockKeyhole size={14} />Position fixieren</label><Switch className="app-switch" id="lock-overlay" checked={locked} onCheckedChange={setLocked} disabled={!hasOverlay} /></div></div></section>
-            <section className="control-section export-section"><div className="section-label"><span className="step-number">03</span><h2>Dein Foto</h2></div><div className="export-setting"><label htmlFor="include-overlay"><span>Vorlage mitspeichern</span><small>{includeOverlay && reference ? "Mit der eingestellten Deckkraft." : "Nur das aktuelle Kamerabild."}</small></label><Switch className="app-switch" id="include-overlay" checked={includeOverlay && hasOverlay} onCheckedChange={setIncludeOverlay} disabled={!hasOverlay} /></div><div className={`export-explainer ${includeOverlay && reference ? "export-composite" : ""}`}><span>{includeOverlay && reference ? <Layers2 size={17} /> : <ShieldCheck size={18} />}</span><p>{includeOverlay && reference ? "Die Vorlage wird ins Foto eingeblendet – auch wenn sie im Sucher ausgeblendet ist." : "Die Vorlage hilft dir beim Ausrichten. Dein gespeichertes Foto bleibt ohne Overlay."}</p></div></section>
-          </aside>
+    <div className="camera-app">
+      <Toaster position="top-center" theme="dark" richColors />
+      <input ref={fileRef} className="sr-only" type="file" accept="image/*" aria-label="Vorlagenbild auswählen" onChange={event => { const file = event.target.files?.[0]; if (file) loadReference(file); event.target.value = ""; }} />
+      <header className="camera-topbar">
+        <div className="brand"><Layers2 size={22} strokeWidth={1.5} /><span>zeitblick<span>.</span></span></div>
+        <div className="camera-top-actions">
+          <button className={`icon-button ${grid ? "selected" : ""}`} onClick={() => setGrid(!grid)} aria-label="Hilfsraster" aria-pressed={grid} title="Hilfsraster"><Grid3X3 size={20} /></button>
+          <button className="icon-button" onClick={toggleFullscreen} aria-label={fullscreen ? "Vollbild beenden" : "Vollbild öffnen"} title="Vollbild">{fullscreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}</button>
+          <button className={`icon-button ${settingsOpen ? "selected" : ""}`} onClick={() => setSettingsOpen(true)} aria-label="Einstellungen öffnen" title="Einstellungen"><SlidersHorizontal size={21} /></button>
         </div>
-        <footer className="app-footer"><span><LockKeyhole size={13} />Deine Bilder werden auf deinem Gerät verarbeitet.</span><button onClick={() => setHelpOpen(true)}>So funktioniert’s<ChevronRight size={14} /></button></footer>
+      </header>
+      <main className={`camera-stage ${draggingFile ? "file-over" : ""}`} ref={stageRef} aria-label="Kamera und Sucher" onDragOver={event => { event.preventDefault(); setDraggingFile(true); }} onDragLeave={() => setDraggingFile(false)} onDrop={event => { event.preventDefault(); setDraggingFile(false); const file = event.dataTransfer.files[0]; if (file) loadReference(file); }}>
+        <div className={`viewfinder ${reference && !locked && overlayVisible ? "movable" : ""}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onLostPointerCapture={onPointerEnd} tabIndex={reference ? 0 : -1} role="group" aria-label="Live-Sucher. Vorlage mit den Pfeiltasten verschieben." onKeyDown={event => { if (!reference || locked || !overlayVisible) return; const moves: Record<string, [number, number]> = { ArrowLeft: [-0.005, 0], ArrowRight: [0.005, 0], ArrowUp: [0, -0.005], ArrowDown: [0, 0.005] }; if (moves[event.key]) { event.preventDefault(); const [dx, dy] = moves[event.key]; setTransform(t => ({ ...t, x: Math.max(-1, Math.min(1, t.x + dx * (event.shiftKey ? 5 : 1))), y: Math.max(-1, Math.min(1, t.y + dy * (event.shiftKey ? 5 : 1))) })); } }}>
+          <video ref={videoRef} autoPlay playsInline muted className={cameraState === "ready" ? "live-video" : "live-video inactive"} onResize={() => { const video = videoRef.current; if (video?.videoWidth && video?.videoHeight) setVideoSize({ width: video.videoWidth, height: video.videoHeight }); }} />
+          {reference && placement && <img className="overlay-image" src={reference.url} alt="Deine historische Vorlage" draggable={false} style={{ width: placement.width, height: placement.height, left: placement.centerX, top: placement.centerY, transform: `translate(-50%, -50%) rotate(${transform.rotation}deg)`, opacity: overlayVisible ? opacity / 100 : 0 }} />}
+          {grid && <div className="thirds-grid" aria-hidden="true"><i /><i /><i /><i /></div>}
+          <div className="frame-corners" aria-hidden="true"><i /><i /><i /><i /></div>
+          {flash && <div className="capture-flash" />}
+        </div>
+        <div className="viewfinder-top"><span className={`camera-status ${cameraState === "ready" ? "active" : ""}`}>{cameraState === "ready" ? "LIVE" : cameraState === "starting" ? "VERBINDET" : cameraState === "error" ? "KAMERA INAKTIV" : "SUCHER"}</span><div>{cameraState === "ready" && <button className="icon-button glass-button" onClick={stopCamera} aria-label="Kamera ausschalten"><CameraOff size={18} /></button>}{reference && <button className={`icon-button glass-button ${locked ? "selected" : ""}`} onClick={() => setLocked(!locked)} aria-label={locked ? "Vorlage lösen" : "Vorlage fixieren"} aria-pressed={locked}><LockKeyhole size={18} /></button>}</div></div>
+        {cameraState !== "ready" && <div className={`camera-empty ${reference ? "with-reference" : ""}`}><div className="camera-empty-content"><span className="empty-camera-icon">{cameraState === "starting" ? <LoaderCircle className="spin" size={32} /> : cameraState === "error" ? <CameraOff size={32} strokeWidth={1.4} /> : <Camera size={36} strokeWidth={1.35} />}</span><h1>{cameraState === "starting" ? "Deine Kamera wird gestartet …" : cameraState === "error" ? "Noch kein Kamerabild" : "Damals im Blick."}</h1><p>{cameraState === "starting" ? "Bitte erlaube den Kamerazugriff in deinem Browser." : cameraError || "Lege dein historisches Foto über die heutige Aussicht."}</p><button className="primary-button" onClick={() => cameraState === "starting" ? stopCamera() : startCamera()}>{cameraState === "starting" ? "Abbrechen" : <><Camera size={18} />{cameraState === "error" ? "Erneut versuchen" : "Kamera starten"}</>}</button><span className="camera-permission-note"><ShieldCheck size={13} />Privat und werbefrei</span></div></div>}
+        <div className="viewfinder-bottom"><span>{reference ? <>{locked ? <LockKeyhole size={13} /> : <Move size={13} />}{locked ? "Vorlage fixiert" : "Vorlage ziehen & zoomen"}</> : "Vorlage unten auswählen"}</span>{cameraState === "ready" && <span>{crop?.width} × {crop?.height}</span>}</div>
       </main>
-      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent className="photo-dialog" showCloseButton={false}><button className="dialog-close icon-button" aria-label="Fotovorschau schließen" onClick={() => setReviewOpen(false)}><X size={21} /></button><DialogTitle>Dein Moment, festgehalten.</DialogTitle><DialogDescription>Kontrolliere dein Foto und speichere es auf deinem Gerät.</DialogDescription>{capture && <><div className="photo-review"><img src={capture.url} alt={capture.withOverlay ? "Aufgenommenes Foto mit Vorlage" : "Aufgenommenes Foto ohne Vorlage"} /></div><div className="photo-meta"><span><Check size={15} />{capture.withOverlay ? `Mit Vorlage · ${capture.opacity} %` : "Ohne Vorlage"}</span><span>JPG · {capture.width} × {capture.height}</span></div><button className="primary-button save-button" onClick={savePhoto}><Download size={18} />Foto speichern</button><a className="direct-download" href={capture.url} download={capture.filename}>Direkt als JPG herunterladen</a><button className="quiet-button back-camera" onClick={() => setReviewOpen(false)}>Weiter fotografieren</button></>}</DialogContent></Dialog>
-      <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent className="help-dialog" showCloseButton={false}><button className="dialog-close icon-button" aria-label="Hilfe schließen" onClick={() => setHelpOpen(false)}><X size={21} /></button><DialogTitle>Ein Ort. Zwei Zeiten.</DialogTitle><DialogDescription>So hältst du die Perspektive von damals fest.</DialogDescription><ol className="help-steps"><li><span>01</span><div><strong>Vorlage auswählen</strong><p>Wähle ein historisches Bild aus deinen Fotos.</p></div></li><li><span>02</span><div><strong>Perspektive finden</strong><p>Starte die Kamera. Passe die Deckkraft an, verschiebe die Vorlage und zoome mit zwei Fingern. Bewege dein Handy, bis die Ansichten zusammenpassen.</p></div></li><li><span>03</span><div><strong>Den Moment aufnehmen</strong><p>„Vorlage mitspeichern“ ist anfangs aus. Tippe auf den Auslöser und dann auf „Foto speichern“. Mit dem Schalter kannst du auch beide Bilder zusammen aufnehmen.</p></div></li></ol><div className="install-help"><Smartphone size={22} /><div><strong>Wie eine App öffnen</strong><p>Android: Im Chrome-Menü „Zum Startbildschirm hinzufügen“ wählen. iPhone: In Safari über „Teilen“ zum Home-Bildschirm hinzufügen.</p>{installPrompt && <button className="primary-button" onClick={async () => { try { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null); } catch { toast.error("Nutze zum Hinzufügen bitte das Menü deines Browsers."); } }}>App hinzufügen</button>}</div></div><p className="help-footnote">Fotos werden aus dem Live-Kamerabild aufgenommen. Auflösung und Kamerafunktionen hängen vom Gerät und Browser ab. Vorlagen und Fotos bleiben hier nur bis zum Neuladen verfügbar – speichere deine Aufnahme vorher.</p></DialogContent></Dialog>
+      <footer className="camera-dock"><div className="dock-inner">
+        <div className="opacity-row"><button className={`icon-button ${reference && overlayVisible ? "selected" : ""}`} onClick={() => setOverlayVisible(!overlayVisible)} disabled={!reference} aria-label={overlayVisible ? "Vorlage ausblenden" : "Vorlage anzeigen"} aria-pressed={overlayVisible}>{overlayVisible ? <Eye size={20} /> : <EyeOff size={20} />}</button><div className="opacity-control"><label id="opacity-label">Deckkraft <output>{opacity} %</output></label><LabeledSlider className="control-slider" aria-labelledby="opacity-label" min={0} max={100} step={1} value={[opacity]} onValueChange={([value]) => setOpacity(value)} disabled={!reference} /></div><button className="reference-button" onClick={() => fileRef.current?.click()} disabled={loadingImage}>{loadingImage ? <LoaderCircle className="spin" size={19} /> : reference ? <img src={reference.url} alt="Geladene Vorlage" /> : <ImagePlus size={21} />}<span>{reference ? "Wechseln" : "Vorlage"}</span></button></div>
+        <div className="shutter-row"><button className="last-photo" onClick={() => setReviewOpen(true)} disabled={!capture} aria-label="Letztes Foto vergleichen">{capture ? <img src={capture.url} alt="Letztes Foto ohne Overlay" /> : <ImagePlus size={23} strokeWidth={1.5} />}</button><div className="shutter-wrap"><button className="shutter" onClick={takePhoto} disabled={cameraState !== "ready" || capturing} aria-label="Foto aufnehmen"><span>{capturing ? <LoaderCircle className="spin" size={28} /> : <Camera size={28} strokeWidth={1.5} />}</span></button></div><button className="camera-switch icon-button" disabled={cameraState === "starting"} onClick={() => startCamera(facing === "environment" ? "user" : "environment")} aria-label="Kamera wechseln"><SwitchCamera size={26} /></button></div>
+        <button className="save-summary" onClick={() => setSettingsOpen(true)}>{saveMode === "both" && reference ? <Layers2 size={13} /> : <Check size={13} />}{!reference || saveMode === "clean" ? "Foto ohne Overlay" : saveMode === "both" ? "Beide Varianten speichern" : "Foto mit Overlay"}<ChevronDown size={13} /></button>
+      </div></footer>
+      <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetContent side="bottom" className="settings-sheet" showCloseButton={false}><div className="sheet-inner"><div className="sheet-heading"><div><SheetTitle>Dein Blick, deine Einstellungen.</SheetTitle><SheetDescription>Die Vorlage bleibt unabhängig vom gespeicherten Foto.</SheetDescription></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Einstellungen schließen"><X size={21} /></button></div><div className="settings-grid">
+        <section className="settings-section"><h2>Vorlage ausrichten</h2><div className="range-heading"><label id="scale-label"><ZoomIn size={15} />Größe</label><output>{Math.round(transform.scale * 100)} %</output></div><LabeledSlider className="control-slider" aria-labelledby="scale-label" value={[transform.scale * 100]} onValueChange={([value]) => setTransform(t => ({ ...t, scale: value / 100 }))} min={25} max={400} step={1} disabled={!reference || locked} /><div className="range-heading"><label id="rotation-label"><RotateCw size={15} />Drehung</label><output>{Math.round(transform.rotation)}°</output></div><LabeledSlider className="control-slider" aria-labelledby="rotation-label" value={[transform.rotation]} onValueChange={([value]) => setTransform(t => ({ ...t, rotation: value }))} min={-180} max={180} step={1} disabled={!reference || locked} /><div className="setting-row"><label htmlFor="lock-overlay"><LockKeyhole size={15} />Position fixieren</label><Switch className="app-switch" id="lock-overlay" checked={locked} onCheckedChange={setLocked} disabled={!reference} /></div><div className="setting-buttons"><button className="quiet-button" disabled={!reference} onClick={() => { setTransform(INITIAL); setLocked(false); }}><RotateCcw size={15} />Zurücksetzen</button><button className="quiet-button" disabled={!reference} onClick={removeReference}><X size={15} />Vorlage entfernen</button></div></section>
+        <section className="settings-section"><h2>Standard beim Speichern</h2><SaveModeControl id="camera-save" value={saveMode} onChange={setSaveMode} hasOverlay={hasOverlay} /><p className="setting-explanation">Du kannst die Auswahl nach der Aufnahme noch ändern. „Beide“ speichert zwei Varianten desselben Moments.</p><button className="help-link" onClick={() => { setSettingsOpen(false); setHelpOpen(true); }}><Smartphone size={19} /><span>{nativeApp ? "Hilfe & Android-App" : "Hilfe & zum Startbildschirm hinzufügen"}</span></button><p className="privacy-note"><ShieldCheck size={14} />Deine Bilder werden lokal auf deinem Gerät verarbeitet.</p></section>
+      </div></div></SheetContent></Sheet>
+      {capture && <CaptureReview key={capture.id} capture={capture} open={reviewOpen} onOpenChange={setReviewOpen} mode={saveMode} setMode={setSaveMode} />}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent className="help-dialog" showCloseButton={false}><button className="dialog-close icon-button" aria-label="Hilfe schließen" onClick={() => setHelpOpen(false)}><X size={21} /></button><DialogTitle>Ein Ort. Zwei Zeiten.</DialogTitle><DialogDescription>So hältst du die Perspektive von damals fest.</DialogDescription><ol className="help-steps"><li><strong>Vorlage auswählen</strong><p>Wähle unten dein historisches Bild aus. Mit dem Auge blendest du es im Sucher ein und aus.</p></li><li><strong>Ausrichten & aufnehmen</strong><p>Starte die Kamera, regle die Deckkraft und richte die Perspektive aus. Du kannst die Vorlage ziehen, mit zwei Fingern zoomen und in den Einstellungen drehen.</p></li><li><strong>Genau vergleichen</strong><p>Nach dem Auslösen zoomst du mit zwei Fingern oder den Plus- und Minus-Tasten bis zu 6× in die Aufnahme. Blende die Vorlage ein und aus oder ändere ihre Deckkraft. Der Zoom dient nur der Kontrolle und beschneidet dein Foto nicht.</p></li><li><strong>Eine oder beide Varianten speichern</strong><p>Wähle „Ohne Overlay“, „Mit Overlay“ oder „Beide“. Bei „Beide“ bekommst du zwei JPGs aus derselben Aufnahme. Unterstützt dein Gerät den gemeinsamen Speicherdialog nicht, enthält der ZIP-Download beide Dateien.</p></li></ol><div className="install-help"><Smartphone size={22} /><div><strong>{nativeApp ? "Zeitblick für Android" : "Wie eine App öffnen"}</strong><p>{nativeApp ? "Deine Fotos werden direkt im Album Zeitblick in deiner Galerie gespeichert. Die App verarbeitet deine Bilder lokal und funktioniert ohne Internet." : "Android: Im Chrome-Menü „Zum Startbildschirm hinzufügen“ wählen. iPhone: In Safari über „Teilen“ zum Home-Bildschirm hinzufügen."}</p>{installPrompt && <button className="primary-button" onClick={async () => { try { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null); } catch { toast.error("Nutze zum Hinzufügen bitte das Menü deines Browsers."); } }}>App hinzufügen</button>}</div></div><p className="help-footnote">Die Auflösung hängt vom Live-Kamerabild deines Geräts ab. Speichere Fotos vor dem Neuladen. Vorlage und Aufnahme bleiben nur für diese Sitzung verfügbar.</p></DialogContent></Dialog>
     </div>
   );
 }
