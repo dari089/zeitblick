@@ -16,7 +16,7 @@ Mobile-first overlay camera for matching a historical reference to a present-day
 
 ## Android test app
 
-`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.2.1 (5), Android 10+ (API 29), target API 35.
+`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.2.2 (6), Android 10+ (API 29), target API 35.
 
 - Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. The APK no longer uses WebRTC camera capture.
 - Lens selector lists public cameras and physical cameras exposed through Android's logical-camera API. Unsupported physical stream combinations produce a recoverable lens-selection error. Manufacturer-private lenses are not bypassed.
@@ -34,7 +34,7 @@ Build the native web bundle, then pass installed official Android build tools (3
 
 ```sh
 node node_modules/vite/bin/vite.js build --config mobile/vite.config.ts
-python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.2.1.apk
+python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.2.2.apk
 ```
 
 The builder uses Java 17, ECJ Java 8 bytecode, D8, aapt2, zipalign and apksigner. It verifies the signed APK. If the specified test key does not exist, it creates one with alias `androiddebugkey` and test password `android`.
@@ -62,3 +62,7 @@ The production CSS optimizer folded the previous `translate: none` override into
 ## Android preview fix 1.2.1
 
 The native camera branch no longer mounts an HTML video element. Previously, marking Camera2 ready made the unused browser video visible; Android WebView could paint its default play-button poster over the working TextureView. Browser-only capture still mounts its video element.
+
+## Preview geometry fix 1.2.2
+
+TextureView already applies sensor orientation. PreviewGeometry undoes its aspect stretch using sensor-oriented buffer dimensions, applies a uniform center-cover scale, and compensates display rotation only. A DisplayListener also updates 180-degree rotations that do not resize the view. JPEG orientation remains separate. See https://developer.android.com/media/camera/camera2/camera-preview#textureview . Host geometry checks cover sensor/display quarter turns, portrait, landscape and narrow comparison panes; physical device verification remains required.

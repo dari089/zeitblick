@@ -30,6 +30,12 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  private final Activity activity;
  private final TextureView texture;
  private final CameraManager manager;
+ private final android.hardware.display.DisplayManager displays;
+ private final android.hardware.display.DisplayManager.DisplayListener displayListener=new android.hardware.display.DisplayManager.DisplayListener(){
+  public void onDisplayAdded(int id){}
+  public void onDisplayRemoved(int id){}
+  public void onDisplayChanged(int id){configureTransform();}
+ };
  private final Listener listener;
  private final Handler main=new Handler(Looper.getMainLooper());
  private final HandlerThread imageThread=new HandlerThread("ZeitblickPhotos");
@@ -50,6 +56,8 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  CameraController(Activity activity,TextureView texture,Listener listener){
   this.activity=activity;this.texture=texture;this.listener=listener;
   manager=(CameraManager)activity.getSystemService(Context.CAMERA_SERVICE);
+  displays=(android.hardware.display.DisplayManager)activity.getSystemService(Context.DISPLAY_SERVICE);
+  displays.registerDisplayListener(displayListener,main);
   imageThread.start();images=new Handler(imageThread.getLooper());
   texture.setSurfaceTextureListener(this);
  }
@@ -149,9 +157,14 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  }
  private void configureTransform(){
   if(previewSize==null||texture.getWidth()==0||texture.getHeight()==0)return;
-  float w=previewSize.getWidth(),h=previewSize.getHeight(),vw=texture.getWidth(),vh=texture.getHeight();int turn=rotation();
-  float scale=Math.max(vw/(turn%180==0?w:h),vh/(turn%180==0?h:w));
-  Matrix matrix=new Matrix();matrix.setScale(w/vw,h/vh);matrix.postTranslate(-w/2,-h/2);matrix.postRotate(turn);matrix.postScale(scale,scale);matrix.postTranslate(vw/2,vh/2);texture.setTransform(matrix);
+  Integer sensor=lens==null?0:lens.info.get(CameraCharacteristics.SENSOR_ORIENTATION);
+  int display=texture.getDisplay()==null?0:texture.getDisplay().getRotation()*90;
+  float[] transform=PreviewGeometry.transform(previewSize.getWidth(),previewSize.getHeight(),sensor==null?0:sensor,display,texture.getWidth(),texture.getHeight());
+  float cx=texture.getWidth()/2f,cy=texture.getHeight()/2f;
+  Matrix matrix=new Matrix();
+  matrix.setScale(transform[0],transform[1],cx,cy);
+  matrix.postRotate(transform[2],cx,cy);
+  texture.setTransform(matrix);
  }
  private Range<Integer> exposureRange(){Range<Integer> range=lens.info.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);return range==null?new Range<>(0,0):range;}
  private void controls(CaptureRequest.Builder builder){
@@ -193,7 +206,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   generation++;wanted=false;failPhoto("Die Aufnahme wurde unterbrochen.");
   if(session!=null){session.close();session=null;}if(device!=null){device.close();device=null;}if(reader!=null){reader.close();reader=null;}if(previewSurface!=null){previewSurface.release();previewSurface=null;}preview=null;
  }
- void destroy(){stop();imageThread.quitSafely();}
+ void destroy(){displays.unregisterDisplayListener(displayListener);stop();imageThread.quitSafely();}
  @Override public void onSurfaceTextureAvailable(SurfaceTexture surface,int width,int height){if(wanted)open();}
  @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface,int width,int height){configureTransform();}
  @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface){stop();return true;}
