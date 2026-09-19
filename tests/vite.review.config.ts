@@ -7,6 +7,6 @@ export default mergeConfig(mobile, {
   publicDir: false,
   build: {
     outDir: '../public/__review-check',
-    rollupOptions: { input: fileURLToPath(new URL('./review-browser.html', import.meta.url)) },
+    rollupOptions: { input: {review:fileURLToPath(new URL('./review-browser.html', import.meta.url)),native:fileURLToPath(new URL('./native-browser.html', import.meta.url))} },
   },
 });

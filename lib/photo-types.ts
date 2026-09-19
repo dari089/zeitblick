@@ -4,7 +4,6 @@ export type PhotoCapture = {
   raw: HTMLCanvasElement;
   layer: HTMLCanvasElement | null;
   url: string;
-  layerUrl: string | null;
   blob: Blob;
   width: number;
   height: number;

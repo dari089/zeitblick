@@ -8,3 +8,32 @@
 @media(max-width:600px){.camera-app{min-height:520px}.camera-topbar{height:56px;padding-left:max(15px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}.brand{font-size:22px;gap:7px}.brand>svg{width:20px}.camera-top-actions{gap:3px}.camera-stage{min-height:200px}.frame-corners{inset:18px}.viewfinder-top{top:12px;left:14px;right:14px}.viewfinder-bottom{bottom:10px;left:12px;right:12px;font-size:12px}.camera-empty h1{font-size:29px}.camera-empty p{font-size:16px}.empty-camera-icon{width:65px;height:65px;margin-bottom:21px}.camera-empty.with-reference .camera-empty-content{padding:20px}.camera-dock{padding:8px 14px max(8px,env(safe-area-inset-bottom))}.opacity-row{gap:8px}.reference-button{font-size:14px;padding:8px}.opacity-control label{font-size:12px}.shutter-row{margin-top:5px}.shutter{width:72px;height:72px}.save-summary{margin-top:4px}.settings-sheet{padding:19px 20px max(25px,env(safe-area-inset-bottom));border-radius:19px 19px 0 0;max-height:83dvh}.sheet-heading{gap:5px;margin-bottom:21px}.sheet-heading [data-slot=sheet-title]{font-size:20px;line-height:1.3}.settings-grid{grid-template-columns:1fr;gap:27px}.settings-section+.settings-section{border-top:1px solid #394e2c;padding-top:23px}.save-choice{font-size:14px;gap:6px;padding:12px 6px}.save-choice [data-slot=radio-group-item]{width:12px;height:12px}.review-header{min-height:63px;padding:9px 13px;gap:10px}.review-header [data-slot=dialog-title]{font-size:18px}.review-header [data-slot=dialog-description]{font-size:12px}.review-header-spacer{width:35px}.back-button{min-width:35px}.back-button span{display:none}.zoom-controls{top:12px;right:12px}.zoom-hint{font-size:12px;white-space:normal;width:max-content;max-width:calc(100% - 22px)}.review-footer{padding:12px 14px max(9px,env(safe-area-inset-bottom));max-height:45dvh}.review-overlay-row{gap:13px;margin-bottom:10px}.pill-button{font-size:12px;padding:9px;gap:5px;min-height:40px}.review-save-row{flex-direction:column;gap:8px;margin-top:11px}.review-save-row p{text-align:center;font-size:12px}.review-save-row .primary-button{width:100%;min-height:46px}.download-link{margin-top:3px;font-size:12px}.zoom-container{min-height:160px}}
 @media(max-height:550px) and (orientation:landscape){.camera-app{min-height:420px}.camera-topbar{height:46px}.camera-dock{padding-top:4px;padding-bottom:4px}.dock-inner{max-width:880px;display:grid;grid-template-columns:1fr 250px;gap:5px 30px}.opacity-row{grid-row:1;align-self:center}.shutter-row{grid-row:1;grid-column:2;margin:0}.save-summary{grid-column:1/-1;margin-top:0}.shutter{width:58px;height:58px}.last-photo,.camera-switch{width:42px;height:42px}.camera-empty-content{max-width:430px}.empty-camera-icon,.camera-permission-note{display:none}.camera-empty h1{font-size:23px;margin-bottom:8px}.camera-empty .primary-button{margin-top:12px}.camera-empty p{font-size:14px;max-width:400px}.review-footer{max-height:45dvh;padding:8px 20px}.review-inner{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}.review-overlay-row{margin:0}.review-save-row{margin:0;gap:10px}.review-save-row p{font-size:12px}.download-link{margin:0}.zoom-hint{display:none}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* Keep live video composition light; gestures change transforms, not layout. */
+.overlay-image{will-change:transform,opacity;backface-visibility:hidden}.native-app .glass-button,.native-app .camera-status{backdrop-filter:none}.canvas-photo,.canvas-photo canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.canvas-photo{will-change:opacity}.camera-quality{margin-bottom:24px}.camera-quality label{display:block;font-size:15px;font-weight:600;margin-bottom:10px}.camera-quality select{width:100%;min-height:46px;background:#22301d;color:#e2efcf;border:1px solid #5c7146;border-radius:9px;padding:10px;font:inherit}.camera-quality p{font-size:14px;color:#abc294;line-height:1.5;margin:10px 0 0}
+
+.native-app{touch-action:pan-x pan-y}.native-app button{touch-action:manipulation}
+
+/* Native preview is a TextureView beneath the transparent camera pane. */
+html:has(.native-app),body:has(.native-app),.native-app,.native-app .camera-stage{background:transparent}
+.native-app{min-height:0}
+.camera-stage{display:flex}
+.camera-pane{position:relative;flex:1;min-width:0;overflow:hidden}
+.reference-pane{position:relative;width:50%;overflow:hidden;background:#080d0a;touch-action:none;user-select:none;border-right:1px solid #718653}
+.pane-label{position:absolute;left:8px;bottom:9px;font-size:11px;padding:4px 7px;background:#10200de0;border-radius:5px;pointer-events:none;color:#d3e7bb}
+.side-by-side .viewfinder-bottom{display:none}
+.side-by-side .viewfinder-top{left:8px;right:8px}
+.side-by-side .frame-corners{inset:9px}
+.side-by-side .camera-empty{padding:10px}
+.side-by-side .camera-empty h1{font-size:18px}
+.side-by-side .camera-empty p{font-size:12px}
+.lens-row{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.lens-row select{flex:1;min-width:0;max-width:100%;border:1px solid #455c35;border-radius:8px;background:#24331e;color:#d6e9bf;font:12px inherit;padding:7px;min-height:40px}
+.lens-row .quiet-button{white-space:nowrap;font-size:12px;min-width:60px}
+.zoom-panel{position:absolute;top:0;bottom:0;overflow:hidden}
+.zoom-panel+.zoom-panel{border-left:1px solid #718653}
+.comparison-button{margin-bottom:10px}
+.native-app .camera-stage{min-height:100px}
+@media(max-height:550px){.native-app .camera-dock{padding:3px 12px}.native-app .lens-row{grid-column:1/-1;margin:0}.native-app .camera-topbar{height:44px}.native-app .camera-stage{min-height:60px}}
+
+.zoom-panel .pane-label{bottom:46px}

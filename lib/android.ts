@@ -1,4 +1,4 @@
-type AndroidBridge = { savePhotos: (payload: string) => void };
+type AndroidBridge = { startCamera?: (lens: string, quality: string, id: string) => void; stopCamera?: () => void; capturePhoto?: (id: string) => void; setExposure?: (value: number) => void; setPreviewBounds?: (x: number, y: number, width: number, height: number, density: number) => void; savePhotos: (payload: string) => void; pickReference?: (requestId: string) => void; releaseReference?: (url: string) => void };
 export function androidBridge(): AndroidBridge | undefined {
   return typeof window !== 'undefined' ? (window as Window & { ZeitblickAndroid?: AndroidBridge }).ZeitblickAndroid : undefined;
 }
@@ -22,3 +22,18 @@ export async function saveToAndroid(files: File[]): Promise<void> {
     catch (error) { window.clearTimeout(timeout); window.removeEventListener('zeitblick-save-result', result); reject(error); }
   });
 }
+
+export type NativeLens = { id: string; label: string; facing: 'environment' | 'user' };
+export type NativeCamera = { requestId: string; id: string; width: number; height: number; facing: 'environment' | 'user'; exposureMin: number; exposureMax: number; exposureStep: number };
+function nativeRequest<T>(eventName: string, invoke: (id: string) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = crypto.randomUUID();
+    const timer = window.setTimeout(() => { cleanup(); reject(new Error('Die Kamera antwortet nicht. Bitte erneut versuchen.')); }, 45000);
+    function cleanup() { clearTimeout(timer); window.removeEventListener(eventName, result); }
+    function result(event: Event) { const value = (event as CustomEvent).detail; if (value?.requestId !== id) return; cleanup(); if(value.error) reject(new Error(value.error)); else resolve(value); }
+    window.addEventListener(eventName, result);
+    try { invoke(id); } catch(error) { cleanup(); reject(error); }
+  });
+}
+export function openNativeCamera(lens: string, quality: string) { return nativeRequest<NativeCamera>('zeitblick-camera-result', id => androidBridge()!.startCamera!(lens, quality, id)); }
+export function captureNativePhoto() { return nativeRequest<{url: string}>('zeitblick-photo-result', id => androidBridge()!.capturePhoto!(id)); }
