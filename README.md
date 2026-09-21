@@ -16,7 +16,7 @@ Mobile-first overlay camera for matching a historical reference to a present-day
 
 ## Android test app
 
-`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.4.0 (8), Android 10+ (API 29), target API 35.
+`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.5.0 (9), Android 10+ (API 29), target API 35.
 
 - Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. The APK no longer uses WebRTC camera capture.
 - Lens selector lists public cameras and physical cameras exposed through Android's logical-camera API. Unsupported physical stream combinations produce a recoverable lens-selection error. Manufacturer-private lenses are not bypassed.
@@ -34,7 +34,7 @@ Build the native web bundle, then pass installed official Android build tools (3
 
 ```sh
 node node_modules/vite/bin/vite.js build --config mobile/vite.config.ts
-python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.4.0.apk
+python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.5.0.apk
 ```
 
 The builder uses Java 17, ECJ Java 8 bytecode, D8, aapt2, zipalign and apksigner. It verifies the signed APK. If the specified test key does not exist, it creates one with alias `androiddebugkey` and test password `android`.
@@ -86,3 +86,15 @@ The point editor shows one image at full width with Historical/Current tabs. Pan
 Bereiche suchen provides separate normalized search rectangles for both photos. AKAZE/RANSAC runs on these crops at up to 1600 pixels, and matches are mapped back using the integer crop bounds into each original image's normalized coordinate space. Up to 16 distributed, nonduplicate pairs are appended, respecting the existing 32-pair limit. Existing pairs, local-warp base, images and export crop remain unchanged; undo restores the prior set. Unreliable matches or invalid merged geometry produce a recoverable error.
 
 Browser validation with the production fixture: a drag over a locked point preserved its coordinates; explicit editing changed the selected point; regional search appended 16 pairs to the original 16, whose coordinates remained unchanged. Physical Android touch and camera testing remains necessary.
+
+## Workspace and explicit alignment 1.5.0
+
+Image import buttons scroll away. Pinned Alt/Neu controls switch images; the point editor also offers a side-by-side view. A compact footer contains Align, Export and Undo. Export format, animation and save controls now live in a modal with focus handling and dismiss protection during saving.
+
+Tap a marker or numbered pair to enter editing directly; dragging in browse mode pans without moving markers. Tapping the selected marker no longer exits editing. Finish editing locks markers again. All points can be cleared in one action and restored with Undo.
+
+Automatic search appends matches instead of replacing manual work. Edited or manually created pairs are marked as manual. The explicit Align action uses every current pair, renders the comparison and reports the applied count including manual points. Changes invalidate the prior preview/export until Align is pressed. This avoids exporting an outdated result. Search and Align are separate actions.
+
+Regional search retains existing anchors and supports up to 64 pairs. Frames can be resized, moved or newly drawn outside the existing rectangle. It accepts eight RANSAC inliers for regional searches while preserving mutual matching, inlier-ratio and spread checks. Projective validation is applied to the merged full-image geometry instead of extrapolating a cropped-region matrix beyond the area used for matching. Errors and successes are surfaced as toasts and status text; unrelated or highly changed photos can still require manual pairs.
+
+1.5.0 validation: production mobile fixture verified a manual correction retained through regional search (32 applied pairs, including one manual), different search bounds, side-by-side visibility, popup placement, clearing all points and Undo restoring them. The final popup JPEG save was tested through the decoding native-storage double. Nine geometry/capture tests and TypeScript checking passed. Actual Android hardware testing is not available.

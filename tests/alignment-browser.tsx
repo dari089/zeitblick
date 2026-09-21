@@ -1,7 +1,7 @@
 import {createRoot} from 'react-dom/client';
 import {AlignmentEditor} from '../components/alignment-editor';
 import {saveDraft} from '../lib/alignment-store';
-import {warp,IDENTITY} from '../lib/alignment';
+import {warp,IDENTITY,project} from '../lib/alignment';
 import {canvasBlob} from '../lib/photo-types';
 import '../app/globals.css';
 if(!crypto.randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=> 'test-'+Date.now()+'-'+Math.random()});
@@ -27,7 +27,7 @@ async function main(){
  ctx.font='bold 35px serif';ctx.fillStyle='#19211b';ctx.fillText('ZEITBLICK • ALTE FASSADE',90,330);
  const transformed=warp(ctx.getImageData(0,0,900,700),900,700,[.92,.07,.02,-.04,.91,.06,.05,-.03,1],[],false);
  const b=document.createElement('canvas');b.width=900;b.height=700;b.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(transformed.data),900,700),0,0);
- await saveDraft({version:1,a:await canvasBlob(a),b:await canvasBlob(b),names:['Historische Testfassade','Aktuelle Testfassade'],pairs:[],h:IDENTITY,local:false});
+ await saveDraft({version:1,a:await canvasBlob(a),b:await canvasBlob(b),names:['Historische Testfassade','Aktuelle Testfassade'],pairs:new URLSearchParams(location.search).has('seed-points')?[{x:.1,y:.1},{x:.9,y:.1},{x:.9,y:.9},{x:.1,y:.9}].map(b=>({a:project([.92,.07,.02,-.04,.91,.06,.05,-.03,1],b),b,source:'manual' as const})):[],h:IDENTITY,local:false});
  createRoot(document.getElementById('root')!).render(<AlignmentEditor onBack={()=>parent.postMessage({test:'back'},location.origin)}/>);
 }
 void main();

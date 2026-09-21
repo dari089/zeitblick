@@ -107,3 +107,19 @@ html:has(.native-app),body:has(.native-app),.native-app,.native-app .camera-stag
 .align-instruction{min-height:20px;margin:8px 0}
 .region-actions{margin:12px 0}.region-actions .primary-button{width:100%}.region-actions p{font-size:12px;line-height:1.5;color:#a9bc98;margin-top:8px}
 .point-zoom button{font-size:12px;min-height:44px}
+
+.align-pinned{display:flex;gap:6px;padding:6px 15px;background:#182218;flex-shrink:0;border-bottom:1px solid #34442c}
+.align-pinned button{flex:1;min-height:42px;background:#23321c;border:1px solid #536640;border-radius:9px;color:#d5e9bd;font-size:13px}
+.align-pinned button.active{background:#d4ed88;color:#213116}
+.align-work .align-imports{padding:8px 0;background:transparent}
+.point-search button{display:flex;gap:8px;align-items:center;border:1px solid #496238;background:#20321b;border-radius:8px;padding:10px;color:#d6eac2;font-size:13px;min-height:42px;width:100%}
+.align-pictures.side-by-side{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+.side-by-side .point-viewport{height:48dvh;min-height:260px}.side-by-side .point-zoom button{font-size:10px;min-width:26px}
+.side-by-side .align-image-label{padding:8px 5px}.side-by-side .align-image-label strong{font-size:11px}
+.compact-footer{padding:8px 12px;max-height:none}.compact-footer small{display:block;font-size:11px;line-height:1.4;color:#bfd4a6;margin-top:5px}
+.output-button{border:1px solid #617a48;background:#26381e;color:#e0f2c7;border-radius:9px;padding:8px 10px;font-size:13px}
+.alignment-output{background:#192617;border-color:#53683e;color:#e4eed8;max-height:85dvh;overflow:auto}
+.alignment-output .align-export-options{display:block}.alignment-output .align-export-options>label{display:block;font-size:13px}.alignment-output .align-export-options select{font-size:15px;min-height:46px}
+.alignment-output .align-animation-options{margin:16px 0;font-size:14px}.alignment-output .align-animation-options small{font-size:12px;line-height:1.5}.alignment-output .primary-button{width:100%;margin-top:16px;font-size:15px;min-height:46px}
+
+.clear-points{display:block;min-height:44px;margin:8px 0;padding:10px 14px;border:1px solid #795b43;border-radius:8px;background:#30251b;color:#efd1b8;font-size:13px}

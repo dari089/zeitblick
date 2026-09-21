@@ -1,5 +1,5 @@
 export type Point = {x:number;y:number};
-export type Pair = {a:Point;b:Point}; // a: fixed historical, b: current source
+export type Pair = {a:Point;b:Point;source?:'manual'|'auto'}; // a: fixed historical, b: current source
 export type Matrix = number[];
 export const IDENTITY:Matrix=[1,0,0,0,1,0,0,0,1];
 export function project(h:Matrix,p:Point):Point {
