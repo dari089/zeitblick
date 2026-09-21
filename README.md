@@ -16,7 +16,7 @@ Mobile-first overlay camera for matching a historical reference to a present-day
 
 ## Android test app
 
-`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.2.2 (6), Android 10+ (API 29), target API 35.
+`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.3.0 (7), Android 10+ (API 29), target API 35.
 
 - Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. The APK no longer uses WebRTC camera capture.
 - Lens selector lists public cameras and physical cameras exposed through Android's logical-camera API. Unsupported physical stream combinations produce a recoverable lens-selection error. Manufacturer-private lenses are not bypassed.
@@ -34,7 +34,7 @@ Build the native web bundle, then pass installed official Android build tools (3
 
 ```sh
 node node_modules/vite/bin/vite.js build --config mobile/vite.config.ts
-python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.2.2.apk
+python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.3.0.apk
 ```
 
 The builder uses Java 17, ECJ Java 8 bytecode, D8, aapt2, zipalign and apksigner. It verifies the signed APK. If the specified test key does not exist, it creates one with alias `androiddebugkey` and test password `android`.
@@ -66,3 +66,15 @@ The native camera branch no longer mounts an HTML video element. Previously, mar
 ## Preview geometry fix 1.2.2
 
 TextureView already applies sensor orientation. PreviewGeometry undoes its aspect stretch using sensor-oriented buffer dimensions, applies a uniform center-cover scale, and compensates display rotation only. A DisplayListener also updates 180-degree rotations that do not resize the view. JPEG orientation remains separate. See https://developer.android.com/media/camera/camera2/camera-preview#textureview . Host geometry checks cover sensor/display quarter turns, portrait, landscape and narrow comparison panes; physical device verification remains required.
+
+## Offline alignment editor 1.3.0
+
+Open **Bilder ausrichten** and select the historical (fixed) and current (transformed) images. Automatic AKAZE matching with mutual ratio filtering and RANSAC estimates a projective transformation entirely on device. At least four non-collinear matching point pairs can also be placed manually. Drag numbered points to refine them; pinch to inspect details. Local deformation uses a thin-plate residual warp with corner anchors. Different viewpoints and occlusions cannot always be reconciled; inspect results and correct pairs manually.
+
+The comparison supports opacity and a before/after divider. Select a shared crop with draggable corners or aspect presets. Save the transformed current photo or a JPEG composite at the selected opacity. GIF and silent video animate old to new over 4, 6 or 8 seconds, optionally returning to old. All exports share the selected crop. GIF is limited to 512 pixels on its longest edge; video to 1280 with even dimensions for encoder compatibility. Video uses an available MP4 or WebM MediaRecorder encoder; unsupported devices show an actionable error. Keep the app foregrounded while video is recorded.
+
+Prepared images are bounded to 3072 pixels / 6 MP. The latest image pair, points, crop and opacity are persisted locally in IndexedDB; originals are unchanged. JPEG/GIF go to Pictures/Zeitblick; videos go to Movies/Zeitblick using Android MediaStore. Clearing app data removes the local draft.
+
+OpenCV 4.13.0 is bundled at public/alignment/opencv.js from the official OpenCV documentation distribution, with its license. gifenc 1.0.3 is vendored from its npm distribution with its MIT license. Neither algorithm requires a cloud request. No website deployment is required for APK updates.
+
+Validation: geometry tests cover projective recovery, invalid point layouts, local deformation and transparent out-of-bounds pixels. A production browser fixture exercised the actual bundled OpenCV worker (2446 inliers on the synthetic pair), a square crop, opacity and JPEG/GIF/video encoding through a native-storage double. Android compilation/signature validation is separate; hardware and gallery integration still require a physical Android test.

@@ -1,4 +1,4 @@
-type AndroidBridge = { startCamera?: (lens: string, quality: string, id: string) => void; stopCamera?: () => void; capturePhoto?: (id: string) => void; setExposure?: (value: number) => void; setPreviewBounds?: (x: number, y: number, width: number, height: number, density: number) => void; savePhotos: (payload: string) => void; pickReference?: (requestId: string) => void; releaseReference?: (url: string) => void };
+type AndroidBridge = { saveMedia?: (payload: string) => void; startCamera?: (lens: string, quality: string, id: string) => void; stopCamera?: () => void; capturePhoto?: (id: string) => void; setExposure?: (value: number) => void; setPreviewBounds?: (x: number, y: number, width: number, height: number, density: number) => void; savePhotos: (payload: string) => void; pickReference?: (requestId: string) => void; releaseReference?: (url: string) => void };
 export function androidBridge(): AndroidBridge | undefined {
   return typeof window !== 'undefined' ? (window as Window & { ZeitblickAndroid?: AndroidBridge }).ZeitblickAndroid : undefined;
 }
@@ -8,7 +8,7 @@ async function base64(blob: Blob): Promise<string> {
 export async function saveToAndroid(files: File[]): Promise<void> {
   const bridge = androidBridge(); if (!bridge) throw new Error('Android-Speichern nicht verfügbar');
   const id = crypto.randomUUID();
-  const images = await Promise.all(files.map(async file => ({ name: file.name, data: await base64(file) })));
+  const images = await Promise.all(files.map(async file => ({ name: file.name, mime: file.type, data: await base64(file) })));
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => { window.removeEventListener('zeitblick-save-result', result); reject(new Error('Speichern dauert zu lange. Bitte prüfe deine Galerie, bevor du es erneut versuchst.')); }, 60000);
     function result(event: Event) {
@@ -18,7 +18,7 @@ export async function saveToAndroid(files: File[]): Promise<void> {
       if (detail.success) resolve(); else reject(new Error(detail.error || 'Speichern fehlgeschlagen'));
     }
     window.addEventListener('zeitblick-save-result', result);
-    try { bridge.savePhotos(JSON.stringify({ id, images })); }
+    try { const payload=JSON.stringify({id,images}); if(files.some(file=>file.type!=='image/jpeg')){if(!bridge.saveMedia)throw Error('Bitte die aktuelle APK für GIF- und Videoexport installieren.');bridge.saveMedia(payload);}else bridge.savePhotos(payload); }
     catch (error) { window.clearTimeout(timeout); window.removeEventListener('zeitblick-save-result', result); reject(error); }
   });
 }

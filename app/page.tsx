@@ -5,6 +5,7 @@ import { Camera, CameraOff, Check, Eye, EyeOff, Grid3X3, ImagePlus, Layers2, Loa
 import { LabeledSlider } from "@/components/labeled-slider";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { SaveModeControl } from "@/components/save-mode";
+import { AlignmentEditor } from "@/components/alignment-editor";
 import { CaptureReview } from "@/components/capture-review";
 import { canvasBlob, type PhotoCapture, type SaveMode } from "@/lib/photo-types";
 import { Switch } from "@/components/ui/switch";
@@ -20,6 +21,8 @@ type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<
 const INITIAL: Transform = { x: 0, y: 0, scale: 1, rotation: 0 };
 
 export default function Home() {
+  const [workMode, setWorkMode] = useState<'camera'|'align'>(() => {try{return typeof window!=='undefined'&&localStorage.getItem('zeitblick-mode')==='align'?'align':'camera';}catch{return 'camera';}});
+  function chooseMode(mode:'camera'|'align'){try{localStorage.setItem('zeitblick-mode',mode);}catch{}setWorkMode(mode);}
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const requestRef = useRef(0);
@@ -81,7 +84,7 @@ export default function Home() {
     const observer = new ResizeObserver(update); update();
     observer.observe(el);
     return () => observer.disconnect();
-  }, [comparison, hasOverlay]);
+  }, [comparison, hasOverlay, workMode]);
   useEffect(() => () => { if (reference) { URL.revokeObjectURL(reference.url); androidBridge()?.releaseReference?.(reference.url); } }, [reference]);
   useEffect(() => () => { if (capture) { URL.revokeObjectURL(capture.url); capture.raw.width = 0; if (capture.layer) capture.layer.width = 0; } }, [capture]);
   useEffect(() => {
@@ -182,10 +185,10 @@ export default function Home() {
   // not loop: retry stays an explicit action until the next foreground session.
   useEffect(() => {
     if (!nativeApp) return;
-    if (!nativeActive || reviewOpen) { stopCamera(); return; }
+    if (!nativeActive || reviewOpen || workMode === "align") { stopCamera(); return; }
     void startCamera();
     return stopCamera;
-  }, [nativeApp, nativeActive, reviewOpen, cameraProfile, selectedLens]);
+  }, [nativeApp, nativeActive, reviewOpen, cameraProfile, selectedLens, workMode]);
 
   useEffect(() => {
     try { localStorage.setItem('zeitblick-camera-profile', cameraProfile); } catch { /* Optional preference. */ }
@@ -222,6 +225,7 @@ export default function Home() {
   useEffect(() => {
     async function result(event: Event) {
       const data = (event as CustomEvent).detail;
+      if (String(data?.requestId).startsWith("align-")) return;
       if (data?.requestId !== String(sourceRequestRef.current)) { if (data?.url) androidBridge()?.releaseReference?.(data.url); return; }
       if (data?.cancelled) { setLoadingImage(false); return; }
       if (data?.error) { setLoadingImage(false); toast.error(data.error); return; }
@@ -365,6 +369,7 @@ export default function Home() {
     return () => lifecycle.abort();
   }, []);
 
+  if(workMode==='align')return <AlignmentEditor onBack={()=>chooseMode('camera')}/>;
   return (
     <div className={`camera-app ${nativeApp ? "native-app" : ""}`}>
       <Toaster position="top-center" theme="dark" richColors />
@@ -378,6 +383,7 @@ export default function Home() {
           <button className={`icon-button ${settingsOpen ? "selected" : ""}`} onClick={() => setSettingsOpen(true)} aria-label="Einstellungen öffnen" title="Einstellungen"><SlidersHorizontal size={21} /></button>
         </div>
       </header>
+      <div className="work-mode-bar"><span>Kamera</span><button onClick={()=>{stopCamera();chooseMode('align');}}>Bilder ausrichten <span>↗</span></button></div>
       <main className={`camera-stage ${comparison === "side" && reference ? "side-by-side" : ""} ${draggingFile ? "file-over" : ""}`} aria-label="Kamera und Sucher" onDragOver={event => { event.preventDefault(); setDraggingFile(true); }} onDragLeave={() => setDraggingFile(false)} onDrop={event => { event.preventDefault(); setDraggingFile(false); const file = event.dataTransfer.files[0]; if (file) loadReference(file); }}>
         {comparison === 'side' && reference && placement && <div className="reference-pane" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onLostPointerCapture={onPointerEnd}>
           <img className="overlay-image" src={reference.url} alt="Vorlage nebeneinander" draggable={false} style={{width:placement.width,height:placement.height,left:'50%',top:'50%',transform:`translate(-50%,-50%) translate3d(${transform.x*frameWidth}px,${transform.y*frameHeight}px,0) rotate(${transform.rotation}deg) scale(${transform.scale})`}} />

@@ -180,6 +180,29 @@ public final class MainActivity extends Activity {
    try{startActivityForResult(choose,201);}catch(Exception e){pickingReference=false;emitReference(null,false,"Die Bildauswahl konnte nicht geöffnet werden.");}
   });}
   @JavascriptInterface public void releaseReference(String url){references.release(url);}
+  @JavascriptInterface public void saveMedia(String payload){io.execute(() -> {
+   String id="";Uri inserted=null;JSONObject response=new JSONObject();
+   try{
+    JSONObject message=new JSONObject(payload);id=message.getString("id");JSONArray images=message.getJSONArray("images");
+    if(images.length()!=1)throw new IOException("Eine Mediendatei erwartet");
+    JSONObject file=images.getJSONObject(0);String mime=file.getString("mime"),name=file.getString("name");
+    String extension="image/gif".equals(mime)?"gif":"video/mp4".equals(mime)?"mp4":"video/webm".equals(mime)?"webm":null;
+    if(extension==null||!name.matches("zeitblick-[A-Za-z0-9._-]+\\."+extension))throw new IOException("Unbekanntes Format");
+    String encoded=file.getString("data");if(encoded.length()>80000000)throw new IOException("Datei zu groß");
+    byte[] bytes=Base64.decode(encoded,Base64.DEFAULT);if(bytes.length<12)throw new IOException("Datei leer");
+    boolean valid="gif".equals(extension)?bytes[0]=='G'&&bytes[1]=='I'&&bytes[2]=='F':
+      "mp4".equals(extension)?bytes[4]=='f'&&bytes[5]=='t'&&bytes[6]=='y'&&bytes[7]=='p':
+      (bytes[0]&255)==0x1a&&(bytes[1]&255)==0x45&&(bytes[2]&255)==0xdf&&(bytes[3]&255)==0xa3;
+    if(!valid)throw new IOException("Ungültige Mediendatei");
+    boolean video=mime.startsWith("video/");
+    ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,name);values.put(MediaStore.MediaColumns.MIME_TYPE,mime);values.put(MediaStore.MediaColumns.RELATIVE_PATH,video?"Movies/Zeitblick":"Pictures/Zeitblick");values.put(MediaStore.MediaColumns.IS_PENDING,1);
+    inserted=getContentResolver().insert(video?MediaStore.Video.Media.EXTERNAL_CONTENT_URI:MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values);
+    if(inserted==null)throw new IOException("Galerie nicht verfügbar");
+    try(OutputStream out=getContentResolver().openOutputStream(inserted)){if(out==null)throw new IOException("Speicher nicht verfügbar");out.write(bytes);}
+    ContentValues ready=new ContentValues();ready.put(MediaStore.MediaColumns.IS_PENDING,0);getContentResolver().update(inserted,ready,null,null);response.put("success",true);
+   }catch(Exception error){if(inserted!=null){try{getContentResolver().delete(inserted,null,null);}catch(Exception ignored){}}try{response.put("success",false);response.put("error","GIF oder Video konnte nicht gespeichert werden. Bitte Speicherplatz und Format prüfen.");}catch(JSONException ignored){}}
+   try{response.put("id",id);}catch(JSONException ignored){}emit("zeitblick-save-result",response);
+  });}
   @JavascriptInterface public void savePhotos(String payload){io.execute(() -> save(payload));}
   private void save(String payload){
    String id="";ArrayList<Uri> inserted=new ArrayList<>();JSONObject response=new JSONObject();
