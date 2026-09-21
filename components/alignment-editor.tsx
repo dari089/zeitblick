@@ -26,6 +26,8 @@ function PreviewCanvas({canvas,opacity=1}:{canvas:HTMLCanvasElement;opacity?:num
 export function AlignmentEditor({onBack}:{onBack:()=>void}){
  const [a,setA]=useState<EditorImage|null>(null),[b,setB]=useState<EditorImage|null>(null);
  const [state,setState]=useState<State>(initial),[undo,setUndo]=useState<State[]>([]);
+ const [activeSide,setActiveSide]=useState<'a'|'b'>('a'),[pointTool,setPointTool]=useState<'browse'|'add'|'edit'|'region'>('browse');
+ const [regions,setRegions]=useState<{a:Crop;b:Crop}>({a:{x:.15,y:.15,w:.7,h:.7},b:{x:.15,y:.15,w:.7,h:.7}});
  const [selected,setSelected]=useState<number|null>(null),[pending,setPending]=useState<Point|null>(null);
  const [crop,setCrop]=useState<Crop>({...FULL_CROP}),[cropping,setCropping]=useState(false),[exportKind,setExportKind]=useState<'blend'|'current'|'gif'|'video'>('blend'),[seconds,setSeconds]=useState(4),[bounce,setBounce]=useState(false);
  const [tab,setTab]=useState<'points'|'preview'>('points'),[compare,setCompare]=useState<'fade'|'wipe'>('fade'),[opacity,setOpacity]=useState(50);
@@ -67,7 +69,7 @@ export function AlignmentEditor({onBack}:{onBack:()=>void}){
  async function importImage(url:string,name:string,side:'a'|'b',id:number){
   setBusy('Bild wird vorbereitet …');
   try{const image=await decode(url,name);if(!live.current||id!==request.current){URL.revokeObjectURL(image.url);return;}
-   if(side==='a')setA(image);else setB(image);setState(initial());setCrop({...FULL_CROP});setCropping(false);setUndo([]);setPending(null);setSelected(null);setMessage('');setTab('points');
+   if(side==='a')setA(image);else setB(image);setState(initial());setCrop({...FULL_CROP});setCropping(false);setUndo([]);setPending(null);setSelected(null);setMessage('');setTab('points');setPointTool('browse');setActiveSide('a');
   }catch{if(live.current)toast.error('Das Bild konnte nicht geöffnet werden.');}
   finally{if(live.current&&id===request.current)setBusy('');}
  }
@@ -89,20 +91,34 @@ export function AlignmentEditor({onBack}:{onBack:()=>void}){
  }
  function add(side:'a'|'b',p:Point){
   if(busy)return;
-  if(selected!==null&&state.pairs[selected]){const pairs=state.pairs.map((q,i)=>i===selected?{...q,[side]:p}:q);change({...state,pairs});return;}
-  if(side==='a'){setPending(p);return;}
+  if(pointTool==='edit'&&selected!==null&&state.pairs[selected]){const pairs=state.pairs.map((q,i)=>i===selected?{...q,[side]:p}:q);change({...state,pairs});return;}
+  if(pointTool!=='add')return;
+  if(side==='a'){setPending(p);setActiveSide('b');return;}
   if(!pending){setMessage('Tippe zuerst den Punkt im historischen Bild an.');return;}
   if(state.pairs.length>=32){toast.info('Maximal 32 Punktpaare. Verschiebe vorhandene Punkte oder lösche ein Paar.');return;}
   if(state.pairs.some(q=>Math.hypot(q.a.x-pending.x,q.a.y-pending.y)<.008||Math.hypot(q.b.x-p.x,q.b.y-p.y)<.008)){toast.info('Dieser Punkt liegt zu nah an einem vorhandenen Punkt.');return;}
-  change({...state,pairs:[...state.pairs,{a:pending,b:p}]});setPending(null);
+  change({...state,pairs:[...state.pairs,{a:pending,b:p}]});setPending(null);setActiveSide('a');
  }
- function move(side:'a'|'b',i:number,p:Point){if(busy)return;if(i>=state.pairs.length){if(side==='a')setPending(p);return;}setState(s=>({...s,pairs:s.pairs.map((q,j)=>i===j?{...q,[side]:p}:q)}));}
- async function automatic(){
+ function move(side:'a'|'b',i:number,p:Point){if(busy||pointTool!=='edit')return;if(i>=state.pairs.length){if(side==='a')setPending(p);return;}setState(s=>({...s,pairs:s.pairs.map((q,j)=>i===j?{...q,[side]:p}:q)}));}
+ async function automatic(regional=false){
   if(!a||!b)return;job.current?.abort();const controller=new AbortController();job.current=controller;setBusy('Gemeinsame Details werden gesucht …');setMessage('');setError('');
   try{
-   const result=await alignmentJob<{h:Matrix;pairs:Pair[];matches:number;total:number}>({kind:'auto',a:pixels(a.canvas,1100),b:pixels(b.canvas,1100)},controller.signal);
+   const prepare=(image:EditorImage,region:Crop)=>{const bounds=cropBounds(image.canvas.width,image.canvas.height,region),canvas=cropCanvas(image.canvas,region,1600);return {data:pixels(canvas,1600),bounds};};
+   const ra=regional?prepare(a,regions.a):null,rb=regional?prepare(b,regions.b):null;
+   const result=await alignmentJob<{h:Matrix;pairs:Pair[];matches:number;total:number}>({kind:'auto',a:ra?.data||pixels(a.canvas,1100),b:rb?.data||pixels(b.canvas,1100)},controller.signal);
    if(controller.signal.aborted)return;
-   change({pairs:result.pairs,base:result.h,local:false});setSelected(null);setPending(null);setMessage(result.matches+' passende Details. Bitte Gebäude und Ränder prüfen.');setTab('preview');
+   if(regional&&ra&&rb){
+    const restore=(p:Point,bounds:ReturnType<typeof cropBounds>,image:EditorImage)=>({x:(bounds.x+p.x*(bounds.width-1))/(image.canvas.width-1),y:(bounds.y+p.y*(bounds.height-1))/(image.canvas.height-1)});
+    const pairs=[...state.pairs];
+    for(const pair of result.pairs){const p={a:restore(pair.a,ra.bounds,a),b:restore(pair.b,rb.bounds,b)};
+     if(pairs.length<32&&!pairs.some(q=>Math.hypot(q.a.x-p.a.x,q.a.y-p.a.y)<.008||Math.hypot(q.b.x-p.b.x,q.b.y-p.b.y)<.008))pairs.push(p);
+    }
+    const added=pairs.length-state.pairs.length;
+    if(!added)throw Error(state.pairs.length>=32?'32 Punktpaare erreicht. Lösche zuerst ein nicht benötigtes Paar.':'Keine zusätzlichen, ausreichend entfernten Punkte gefunden. Wähle einen anderen Bereich.');
+    if(!state.local)homography(pairs);
+    change({...state,pairs});setSelected(null);setPending(null);setPointTool('browse');setMessage(added+' zusätzliche Punktpaare aus den Bereichen. Vorhandene Punkte bleiben erhalten.');return;
+   }
+   change({pairs:result.pairs,base:result.h,local:false});setPointTool('browse');setSelected(null);setPending(null);setMessage(result.matches+' passende Details. Bitte Gebäude und Ränder prüfen.');setTab('preview');
   }catch(e){if(!controller.signal.aborted)setError((e as Error).message);}
   finally{if(!controller.signal.aborted)setBusy('');}
  }
@@ -151,19 +167,26 @@ export function AlignmentEditor({onBack}:{onBack:()=>void}){
  return <div className="alignment-editor" role="dialog" aria-label="Bilder ausrichten">
   <Toaster position="top-center" theme="dark" richColors/>
   <input ref={file} type="file" accept="image/*" className="sr-only" onChange={e=>{const selectedFile=e.target.files?.[0],target=pick.current;e.target.value='';if(!selectedFile||!target)return;pick.current=null;const url=URL.createObjectURL(selectedFile);void importImage(url,selectedFile.name,target.side,++request.current).finally(()=>URL.revokeObjectURL(url));}}/>
-  <header className="align-header"><button className="back-button" aria-label="Zur Kamera" disabled={!!busy} onClick={()=>void back()}><ArrowLeft size={22}/></button><div><h1>Bilder ausrichten</h1><p>Damals bleibt fest. Heute passt sich an.</p></div><span className="offline-badge">OFFLINE</span></header>
+  <header className="align-header"><button className="back-button" aria-label="Zur Kamera" disabled={!!busy} onClick={()=>void back()}><ArrowLeft size={22}/></button><div><h1>Bilder ausrichten</h1><p>Damals bleibt fest. Heute passt sich an.</p></div></header>
   <div className="align-imports">{(['a','b'] as const).map(side=><button key={side} onClick={()=>choose(side)} disabled={!hydrated||!!busy}><ImagePlus size={18}/><span>{side==='a'?'Historisches Bild':'Aktuelles Bild'}<small>{(side==='a'?a:b)?'Bild wechseln':'Auswählen · auch HEIC'}</small></span></button>)}</div>
   <main className="align-work" inert={!!busy}>
    {(!a||!b)&&<div className="align-welcome"><div className="align-symbol">↗ ⊞ ↙</div><h2>Zwei Zeiten. Eine Perspektive.</h2><p>Wähle beide Fotos. Lass passende Details automatisch suchen oder markiere dieselben Gebäudeecken in beiden Bildern.</p><p>Alles wird auf deinem Handy berechnet. Die Originaldateien bleiben erhalten.</p></div>}
    {a&&b&&<>
     <div className="align-tabs"><button className={tab==='points'?'active':''} onClick={()=>setTab('points')}>Punkte · {state.pairs.length}</button><button className={tab==='preview'?'active':''} disabled={!ready} onClick={()=>setTab('preview')}>Vergleichen</button></div>
     {tab==='points'?<>
-     <p className="align-instruction">{selected!==null?'Paar '+(selected+1)+' bearbeiten: Punkt ziehen oder neue Stelle antippen.':pending?'Jetzt dieselbe Stelle im aktuellen Bild antippen.':'Zuerst eine markante Ecke im historischen Bild antippen.'} <span>Mit zwei Fingern zoomen. Mindestens 4 verteilte Punktpaare.</span></p>
-     <div className="align-pictures">
-      <AlignmentImage image={a} label="Historisch · bleibt fest" points={[...state.pairs.map(p=>p.a),...(pending?[pending]:[])]} selected={selected} onPick={p=>add('a',p)} onSelect={i=>{if(busy)return;checkpoint();setSelected(i<state.pairs.length?i:null);}} onMove={(i,p)=>move('a',i,p)}/>
-      <AlignmentImage image={b} label="Aktuell · wird angepasst" points={state.pairs.map(p=>p.b)} selected={selected} onPick={p=>add('b',p)} onSelect={i=>{if(busy)return;checkpoint();setSelected(i);}} onMove={(i,p)=>move('b',i,p)}/>
+     <div className="point-tools">
+      <button className={pointTool==='add'?'active':''} onClick={()=>{setPointTool(pointTool==='add'?'browse':'add');setSelected(null);setPending(null);setActiveSide('a');}}>+ Punktpaar</button>
+      <button disabled={selected===null} className={pointTool==='edit'?'active':''} onClick={()=>{if(pointTool!=='edit')checkpoint();setPointTool(pointTool==='edit'?'browse':'edit');}}>{pointTool==='edit'?'Fertig':'Punkt bearbeiten'}</button>
+      <button className={pointTool==='region'?'active':''} onClick={()=>{setPointTool(pointTool==='region'?'browse':'region');setPending(null);setActiveSide('a');}}>Bereiche suchen</button>
      </div>
-     <div className="align-pairs"><button className={selected===null?'active':''} onClick={()=>{setSelected(null);setPending(null);}}>+ Neues Paar</button>{state.pairs.map((_,i)=><button key={i} className={selected===i?'active':''} onClick={()=>{setSelected(i);setPending(null);}} aria-label={'Punktpaar '+(i+1)}>{i+1}</button>)}<button disabled={selected===null||!!busy} aria-label="Ausgewähltes Punktpaar löschen" onClick={()=>{change({...state,pairs:state.pairs.filter((_,i)=>i!==selected)});setSelected(null);}}><Trash2 size={16}/></button></div>
+     <div className="image-switch"><button className={activeSide==='a'?'active':''} onClick={()=>setActiveSide('a')}>Historisch{pending?' · ✓':''}</button><button className={activeSide==='b'?'active':''} onClick={()=>setActiveSide('b')}>Aktuell{pending?' · Punkt setzen':''}</button></div>
+     <p className="align-instruction">{pointTool==='region'?'Wähle in beiden Bildern denselben Gebäudebereich.':pointTool==='edit'?'Paar '+((selected??0)+1)+': markierten Punkt ziehen oder neue Stelle antippen.':pointTool==='add'?(pending?'Tippe dieselbe Stelle im aktuellen Bild an.':'Tippe eine markante Ecke im historischen Bild an.'):'Bild frei bewegen und zoomen. Punkte sind gesperrt.'}</p>
+     <div className="align-pictures">
+      {(['a','b'] as const).map(side=><div key={side} hidden={activeSide!==side}>
+       <AlignmentImage image={side==='a'?a:b} label={side==='a'?'Historisches Bild':'Aktuelles Bild'} points={[...state.pairs.map(p=>p[side]),...(side==='a'&&pending?[pending]:[])]} selected={selected} editable={pointTool==='edit'} region={pointTool==='region'?regions[side]:undefined} onRegion={value=>setRegions(r=>({...r,[side]:value}))} onPick={p=>add(side,p)} onSelect={i=>{if(busy)return;setSelected(i<state.pairs.length?i:null);setPointTool('browse');}} onMove={(i,p)=>move(side,i,p)}/>
+      </div>)}
+     </div>
+     {pointTool==='region'?<div className="region-actions"><button className="primary-button" disabled={state.pairs.length>=32} onClick={()=>void automatic(true)}><Sparkles size={17}/> Zusätzliche Punkte suchen</button><p>Beide Rahmen grenzen nur die Suche ein. Deine Fotos und der Exportausschnitt bleiben unverändert.</p></div>:<div className="align-pairs">{state.pairs.map((_,i)=><button key={i} className={selected===i?'active':''} onClick={()=>{setSelected(i);setPointTool('browse');setPending(null);}} aria-label={'Punktpaar '+(i+1)}>{i+1}</button>)}<button disabled={selected===null||!!busy} aria-label="Ausgewähltes Punktpaar löschen" onClick={()=>{change({...state,pairs:state.pairs.filter((_,i)=>i!==selected)});setSelected(null);setPointTool('browse');}}><Trash2 size={16}/></button></div>}
     </>:<>
      <div className="align-comparison-options"><button className={compare==='fade'?'active':''} onClick={()=>setCompare('fade')}>Überlagern</button><button className={compare==='wipe'?'active':''} onClick={()=>setCompare('wipe')}>Vorher / Nachher</button></div>
      <div className="align-crop-tools"><button onClick={()=>setCropping(!cropping)}>{cropping?'Ausschnitt übernehmen':'Ausschnitt wählen'}</button><button onClick={()=>setCrop({...FULL_CROP})}>Ganzes Bild</button></div>
@@ -186,7 +209,7 @@ export function AlignmentEditor({onBack}:{onBack:()=>void}){
   <footer className="align-footer">
    {busy?<div className="align-busy" role="status"><LoaderCircle className="spin" size={18}/><span>{busy}</span>{!busy.startsWith('Bild')&&!busy.includes('gespeichert')&&<button onClick={()=>{job.current?.abort();setBusy('');}}>Abbrechen</button>}</div>:<>
     <div className="align-actions"><button className="primary-button" disabled={!a||!b} onClick={()=>void automatic()}><Sparkles size={17}/> Automatisch ausrichten</button><button className="icon-button" aria-label="Letzte Änderung rückgängig" disabled={!undo.length} onClick={()=>{setState(undo[undo.length-1]);setUndo(h=>h.slice(0,-1));setSelected(null);setPending(null);}}><RotateCcw size={19}/></button></div>
-    {ready&&<div className="align-export-options">
+    {ready&&tab==='preview'&&<div className="align-export-options">
      <label>Speichern als<select aria-label="Exportformat" value={exportKind} onChange={e=>setExportKind(e.target.value as typeof exportKind)}><option value="blend">JPG · Mischbild mit {opacity} % aktuell</option><option value="current">JPG · nur aktuelles Bild</option><option value="gif">GIF · Alt → Neu</option><option value="video">Video · Alt → Neu</option></select></label>
      {(exportKind==='gif'||exportKind==='video')&&<div className="align-animation-options"><label>Dauer<select aria-label="Dauer des Übergangs" value={seconds} onChange={e=>setSeconds(Number(e.target.value))}><option value={4}>4 Sekunden</option><option value={6}>6 Sekunden</option><option value={8}>8 Sekunden</option></select></label><label><input type="checkbox" checked={bounce} onChange={e=>setBounce(e.target.checked)}/> Zurück zu Alt</label><small>{exportKind==='gif'?'GIF · Schleife · bis 512 px':'Video ohne Ton · bis 1280 px · MP4 oder WebM je nach Gerät. Beim Export in der App bleiben.'}</small></div>}
      <button className="primary-button" disabled={rendering||!!error} onClick={()=>void exportOutput()}>Ausschnitt speichern</button>

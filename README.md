@@ -16,7 +16,7 @@ Mobile-first overlay camera for matching a historical reference to a present-day
 
 ## Android test app
 
-`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.3.0 (7), Android 10+ (API 29), target API 35.
+`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.4.0 (8), Android 10+ (API 29), target API 35.
 
 - Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. The APK no longer uses WebRTC camera capture.
 - Lens selector lists public cameras and physical cameras exposed through Android's logical-camera API. Unsupported physical stream combinations produce a recoverable lens-selection error. Manufacturer-private lenses are not bypassed.
@@ -34,7 +34,7 @@ Build the native web bundle, then pass installed official Android build tools (3
 
 ```sh
 node node_modules/vite/bin/vite.js build --config mobile/vite.config.ts
-python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.3.0.apk
+python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.4.0.apk
 ```
 
 The builder uses Java 17, ECJ Java 8 bytecode, D8, aapt2, zipalign and apksigner. It verifies the signed APK. If the specified test key does not exist, it creates one with alias `androiddebugkey` and test password `android`.
@@ -78,3 +78,11 @@ Prepared images are bounded to 3072 pixels / 6 MP. The latest image pair, points
 OpenCV 4.13.0 is bundled at public/alignment/opencv.js from the official OpenCV documentation distribution, with its license. gifenc 1.0.3 is vendored from its npm distribution with its MIT license. Neither algorithm requires a cloud request. No website deployment is required for APK updates.
 
 Validation: geometry tests cover projective recovery, invalid point layouts, local deformation and transparent out-of-bounds pixels. A production browser fixture exercised the actual bundled OpenCV worker (2446 inliers on the synthetic pair), a square crop, opacity and JPEG/GIF/video encoding through a native-storage double. Android compilation/signature validation is separate; hardware and gallery integration still require a physical Android test.
+
+## Point editor 1.4.0
+
+The point editor shows one image at full width with Historical/Current tabs. Pan and pinch are safe by default: existing points move only after selecting a pair and choosing Point bearbeiten. A tap selects a marker; a drag in browse mode pans the image. Finish editing to lock again. Add point pairs explicitly; selecting the historical location advances to the current image. Image zoom is retained when switching tabs. Export controls appear in Compare, keeping the point workspace larger. The Offline badge is removed.
+
+Bereiche suchen provides separate normalized search rectangles for both photos. AKAZE/RANSAC runs on these crops at up to 1600 pixels, and matches are mapped back using the integer crop bounds into each original image's normalized coordinate space. Up to 16 distributed, nonduplicate pairs are appended, respecting the existing 32-pair limit. Existing pairs, local-warp base, images and export crop remain unchanged; undo restores the prior set. Unreliable matches or invalid merged geometry produce a recoverable error.
+
+Browser validation with the production fixture: a drag over a locked point preserved its coordinates; explicit editing changed the selected point; regional search appended 16 pairs to the original 16, whose coordinates remained unchanged. Physical Android touch and camera testing remains necessary.

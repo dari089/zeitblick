@@ -93,3 +93,17 @@ html:has(.native-app),body:has(.native-app),.native-app,.native-app .camera-stag
 .align-export-options select{display:block;width:100%;font-size:12px;border:1px solid #566d40;border-radius:7px;background:#26391e;color:#e0efd2;padding:10px 7px;margin-top:4px}
 .align-export-options>.primary-button{font-size:12px;min-height:39px;padding:9px 12px}.align-animation-options{width:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px}.align-animation-options>label{display:flex;align-items:center;gap:8px}.align-animation-options select{margin:0;width:auto;padding:6px}.align-animation-options small{width:100%;color:#a2b68f;font-size:10px}.align-animation-options input{accent-color:#d4ed88}
 .align-footer{max-height:42dvh;overflow:auto}
+
+/* Focused mobile point editor: one full-width image, explicit point editing. */
+.align-pictures{display:block}
+.point-viewport{height:clamp(320px,53dvh,650px)}
+.align-image-label{padding:8px 12px}.align-image-label strong{font-size:13px}.align-image-label span{display:none}
+.point-tools,.image-switch{display:flex;gap:6px;margin:10px 0}
+.point-tools button,.image-switch button{flex:1;min-height:44px;padding:8px 6px;font-size:12px;border:1px solid #4b6139;background:#1c2b18;color:#cadfb4;border-radius:9px}
+.point-tools button.active,.image-switch button.active{background:#d4ed88;color:#213116;border-color:#d4ed88}
+.point-tools button:disabled{opacity:.4}.image-switch button{font-size:14px}
+.align-header p{display:none}.align-header{padding-top:6px;padding-bottom:6px}
+.align-imports{padding-top:7px;padding-bottom:7px}.align-imports small{display:none}
+.align-instruction{min-height:20px;margin:8px 0}
+.region-actions{margin:12px 0}.region-actions .primary-button{width:100%}.region-actions p{font-size:12px;line-height:1.5;color:#a9bc98;margin-top:8px}
+.point-zoom button{font-size:12px;min-height:44px}
