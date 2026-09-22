@@ -78,5 +78,13 @@
     "apk": "Zeitblick-1.7.0.apk",
     "bytes": 4138377,
     "sha256": "717bc5f9884fdb86d8beba6f16c5b825bddfd827975533393af44990909e0ea2"
+  },
+  {
+    "version": "1.7.1",
+    "tag": "v1.7.1",
+    "commit": "1b88e66d9ceb20c8774e94c26f2069b9f7022e73",
+    "apk": "Zeitblick-1.7.1.apk",
+    "bytes": 4138377,
+    "sha256": "4ba58551a733943a66a88471d9a5d04aba8b60ebd34d71f95e7036b7cbee387d"
   }
 ]
