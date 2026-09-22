@@ -1,0 +1,90 @@
+[
+  {
+    "version": "1.1.0",
+    "tag": "v1.1.0",
+    "commit": "995a61c46eaa62cbd4a036186063022a74ea0c21",
+    "apk": "Zeitblick-1.1.0.apk",
+    "bytes": 562231,
+    "sha256": "60a2efbf281261703a486090a2d6b2ff753dc59ca60139080909d1aff0912085"
+  },
+  {
+    "version": "1.1.1",
+    "tag": "v1.1.1",
+    "commit": "e0e2f1081d42d9bb5777f935569d7571798359ad",
+    "apk": "Zeitblick-1.1.1.apk",
+    "bytes": 562231,
+    "sha256": "310911382fb22b8ca18e3b74bcfca6ea628ac28439b2feada819f2e1c80609e3"
+  },
+  {
+    "version": "1.2.0",
+    "tag": "v1.2.0",
+    "commit": "db187624eeb9e9c0f9b53bd4579ddb488199ba0b",
+    "apk": "Zeitblick-1.2.0.apk",
+    "bytes": 574519,
+    "sha256": "2d8a380d709c2dfb6f460b9ce210697c4ec499e055519416d6356a44f37b39b1"
+  },
+  {
+    "version": "1.2.1",
+    "tag": "v1.2.1",
+    "commit": "eb198a28acd236307c4bcae7ec55337c331f7fb8",
+    "apk": "Zeitblick-1.2.1.apk",
+    "bytes": 574519,
+    "sha256": "7715a2e0b4defcefbca1f57ab5b060238ecd2878ddf677bc749aa9708db92db4"
+  },
+  {
+    "version": "1.2.2",
+    "tag": "v1.2.2",
+    "commit": "e41555e84d57032e1411d37fc3d2cb4c0b73ddc7",
+    "apk": "Zeitblick-1.2.2.apk",
+    "bytes": 574519,
+    "sha256": "bda76dd3053cb82499486bb4ee7b0637c89536ab836e688f99b5b55638d976b1"
+  },
+  {
+    "version": "1.3.0",
+    "tag": "v1.3.0",
+    "commit": "68655fa998c95315e9ba107805f83b0202ac894b",
+    "apk": "Zeitblick-1.3.0.apk",
+    "bytes": 4146569,
+    "sha256": "7942a9d4b15359d1dbc95a21d8e9dbd8c6b3073985f3070ec2526f7c646417c5"
+  },
+  {
+    "version": "1.4.0",
+    "tag": "v1.4.0",
+    "commit": "374dd2d5b6c34295909103280581d217c51a2d98",
+    "apk": "Zeitblick-1.4.0.apk",
+    "bytes": 4146569,
+    "sha256": "ead50d62f21ac3f5ea1bf13f4d3ed2e25c5d79404766c4a6dbf7ad8138725622"
+  },
+  {
+    "version": "1.5.0",
+    "tag": "v1.5.0",
+    "commit": "0d8d365aee515b1a2a17bdb5eb8a40dcbfd124b4",
+    "apk": "Zeitblick-1.5.0.apk",
+    "bytes": 4150665,
+    "sha256": "9a352fd0914b7804ebf8e225325f18a01236d83047c35f897362d9e8408d3047"
+  },
+  {
+    "version": "1.6.0",
+    "tag": "v1.6.0",
+    "commit": "47455319913719405720660d57b5206e99ac56fb",
+    "apk": "Zeitblick-1.6.0.apk",
+    "bytes": 4146569,
+    "sha256": "07835966c366528393d6e2d6127a3e2bf1e53e61dce94f40fba7e6ac921f8060"
+  },
+  {
+    "version": "1.7.0",
+    "tag": "v1.7.0",
+    "commit": "bf7ea0fe6ffd5445d02df88c978979e7a3344b4f",
+    "apk": "Zeitblick-1.7.0.apk",
+    "bytes": 4138377,
+    "sha256": "717bc5f9884fdb86d8beba6f16c5b825bddfd827975533393af44990909e0ea2"
+  },
+  {
+    "version": "1.7.1",
+    "tag": "v1.7.1",
+    "commit": "1b88e66d9ceb20c8774e94c26f2069b9f7022e73",
+    "apk": "Zeitblick-1.7.1.apk",
+    "bytes": 4138377,
+    "sha256": "4ba58551a733943a66a88471d9a5d04aba8b60ebd34d71f95e7036b7cbee387d"
+  }
+]
