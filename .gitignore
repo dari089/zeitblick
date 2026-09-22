@@ -51,3 +51,10 @@ next-env.d.ts
 *.apk
 
 /public/__review-check/
+
+# Private signing material and local Android SDK paths
+*.jks
+*.p12
+*.pfx
+*.idsig
+local.properties

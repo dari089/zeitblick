@@ -2,6 +2,10 @@
 
 Mobile-first overlay camera for matching a historical reference to a present-day view. Images stay on the device; there are no media uploads, ads or analytics.
 
+## Selbst weiterentwickeln
+
+Die deutsche Anleitung steht in [ENTWICKLUNG.md](ENTWICKLUNG.md). Der Quellcode enthält Foto-Kamera, Bildausrichtung, Videovergleich und den Android-Unterbau.
+
 ## Behavior
 
 - Full-height camera layout with a narrow top bar, bottom shutter/opacity controls and a bottom settings sheet.
@@ -16,9 +20,9 @@ Mobile-first overlay camera for matching a historical reference to a present-day
 
 ## Android test app
 
-`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.6.0 (10), Android 10+ (API 29), target API 35.
+`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.7.0 (11), Android 10+ (API 29), target API 35.
 
-- Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. The APK no longer uses WebRTC camera capture.
+- Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. Photo mode uses Camera2; Video mode uses WebRTC.
 - Lens selector lists public cameras and physical cameras exposed through Android's logical-camera API. Unsupported physical stream combinations produce a recoverable lens-selection error. Manufacturer-private lenses are not bypassed.
 - Exposure compensation uses the selected camera's advertised range and EV step. Automatic exposure and continuous autofocus stay enabled where available.
 - Camera automatically starts and stops with foreground/review lifecycle. The native root consumes status/navigation/cutout insets; WebView page zoom is disabled.
@@ -34,7 +38,7 @@ Build the native web bundle, then pass installed official Android build tools (3
 
 ```sh
 node node_modules/vite/bin/vite.js build --config mobile/vite.config.ts
-python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.6.0.apk
+python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.7.0.apk
 ```
 
 The builder uses Java 17, ECJ Java 8 bytecode, D8, aapt2, zipalign and apksigner. It verifies the signed APK. If the specified test key does not exist, it creates one with alias `androiddebugkey` and test password `android`.
