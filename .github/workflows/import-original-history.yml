@@ -1,0 +1,68 @@
+name: Import original Zeitblick history
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: original-history-import
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download and verify original archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir import-data
+          gh release download migration-archive-1.7.1 --pattern Zeitblick-Import-1.7.1.zip --dir import-data
+          echo "dc58bb43dba4d6530f381d1e1fa639b44776ad3ba2aff62d08d51deb724c5c54  import-data/Zeitblick-Import-1.7.1.zip" | sha256sum --check
+          unzip -q import-data/Zeitblick-Import-1.7.1.zip -d import-data
+      - name: Preserve original commits and tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          gh repo clone "$GH_REPO" source
+          cd source
+          git config user.name "Zeitblick Import"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git bundle verify ../import-data/history.bundle
+          git fetch ../import-data/history.bundle refs/heads/main:refs/remotes/original/main 'refs/tags/*:refs/tags/*'
+          if ! git merge-base --is-ancestor refs/remotes/original/main HEAD; then
+            git merge --allow-unrelated-histories --no-commit -s ours refs/remotes/original/main
+            git checkout refs/remotes/original/main -- .
+            git commit -m "Import complete original Zeitblick source and development history"
+          fi
+          git push origin main
+          git push origin --tags
+      - name: Publish verified original APK releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          root = pathlib.Path("../import-data")
+          versions = json.loads((root / "index.json").read_text())
+          for item in versions:
+              tag = item["tag"]
+              commit = subprocess.check_output(["git", "rev-parse", tag + "^{}"], text=True).strip()
+              assert commit == item["commit"], tag
+              apk = root / "apks" / item["apk"]
+              assert apk.stat().st_size == item["bytes"], apk
+              assert hashlib.sha256(apk.read_bytes()).hexdigest() == item["sha256"], apk
+              existing = subprocess.run(["gh", "release", "view", tag], capture_output=True)
+              if existing.returncode == 0:
+                  assets = json.loads(subprocess.check_output(["gh", "release", "view", tag, "--json", "assets"], text=True))["assets"]
+                  if not any(a["name"] == apk.name for a in assets):
+                      subprocess.run(["gh", "release", "upload", tag, str(apk)], check=True)
+                  continue
+              notes = root / "release-notes.txt"
+              notes.write_text("Original-APK und ursprünglicher Quellcode dieser Version.\n\nSHA256: " + item["sha256"] + "\n\nSignaturschlüssel sind nicht im Repository enthalten.\n")
+              subprocess.run(["gh", "release", "create", tag, str(apk), "--verify-tag", "--title", "Zeitblick " + item["version"], "--notes-file", str(notes), "--latest" if item == versions[-1] else "--latest=false"], check=True)
+          PY
