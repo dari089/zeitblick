@@ -10,7 +10,7 @@ export function recordCanvas(canvas:HTMLCanvasElement,done:(blob:Blob)=>void,fai
  const mime=['video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp8','video/webm'].find(type=>typeof MediaRecorder!=='undefined'&&MediaRecorder.isTypeSupported(type));
  if(!mime)throw Error('Dieser Android WebView unterstützt die Videoaufnahme nicht. Bitte Android System WebView aktualisieren.');
  const stream=canvas.captureStream(30);let recorder:MediaRecorder;
- try{recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:3000000});}catch(e){stream.getTracks().forEach(t=>t.stop());throw e;}
+ try{recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8000000});}catch(e){stream.getTracks().forEach(t=>t.stop());throw e;}
  let bytes=0,cancelled=false,finished=false;const chunks:Blob[]=[];
  const timer=setTimeout(stop,60000);let watchdog:ReturnType<typeof setTimeout>|undefined;
  function cleanup(){clearTimeout(timer);if(watchdog)clearTimeout(watchdog);stream.getTracks().forEach(t=>t.stop());}

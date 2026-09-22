@@ -18,6 +18,7 @@ import java.nio.ByteBuffer;
 final class CameraController implements TextureView.SurfaceTextureListener {
  interface Listener {
   void cameras(JSONArray choices);
+  void zoom(JSONObject value);
   void ready(String request,JSONObject camera);
   void error(String request,String message);
   void photo(String request,byte[] jpeg);
@@ -49,6 +50,8 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  private Size previewSize,jpegSize;
  private Lens lens;
  private int generation,exposure;
+ private float zoom=1f;
+ private CameraCharacteristics controlInfo;
  private boolean wanted;
  private String requestedLens="",profile="smooth",request="";
  private volatile String photoRequest;
@@ -62,6 +65,10 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   texture.setSurfaceTextureListener(this);
  }
  private static boolean hasJpeg(CameraCharacteristics info){StreamConfigurationMap map=info.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);return map!=null&&map.getOutputSizes(ImageFormat.JPEG)!=null&&map.getOutputSizes(SurfaceTexture.class)!=null;}
+ private double equivalent(CameraCharacteristics info){
+  float[] f=info.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);SizeF size=info.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
+  return f!=null&&f.length>0&&size!=null?f[0]*43.2666/Math.hypot(size.getWidth(),size.getHeight()):0;
+ }
  private String label(CameraCharacteristics info,boolean automatic){
   Integer facing=info.get(CameraCharacteristics.LENS_FACING);
   float[] focal=info.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
@@ -84,7 +91,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   }
   JSONArray result=new JSONArray();
   for(Lens item:lenses.values()){
-   JSONObject entry=new JSONObject();entry.put("id",item.key);entry.put("label",item.label);
+   JSONObject entry=new JSONObject();entry.put("id",item.key);entry.put("label",item.label);entry.put("equivalent",equivalent(item.info));
    Integer facing=item.info.get(CameraCharacteristics.LENS_FACING);entry.put("facing",facing!=null&&facing==CameraCharacteristics.LENS_FACING_FRONT?"user":"environment");result.put(entry);
   }
   listener.cameras(result);
@@ -98,11 +105,12 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   final int current=++generation;
   try{
    discover();lens=lenses.get(requestedLens);
-   if(lens==null)for(Lens item:lenses.values()){Integer facing=item.info.get(CameraCharacteristics.LENS_FACING);if(facing!=null&&facing==CameraCharacteristics.LENS_FACING_BACK){lens=item;break;}}
+   if(lens==null){double best=Double.MAX_VALUE;for(Lens item:lenses.values()){Integer facing=item.info.get(CameraCharacteristics.LENS_FACING);if(facing!=null&&facing==CameraCharacteristics.LENS_FACING_BACK){double eq=equivalent(item.info),score=(eq>0?Math.abs(eq-24):100)+(item.physical==null?0:1);if(score<best){best=score;lens=item;}}}}
    if(lens==null&&!lenses.isEmpty())lens=lenses.values().iterator().next();
    if(lens==null)throw new IllegalStateException("Keine Kamera verfügbar");
    StreamConfigurationMap map=lens.info.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-   jpegSize=chooseJpeg(map.getOutputSizes(ImageFormat.JPEG),"detail".equals(profile)?3840:1920);
+   controlInfo=manager.getCameraCharacteristics(lens.device);zoom=1f;
+   jpegSize=chooseJpeg(map.getOutputSizes(ImageFormat.JPEG),4000);
    previewSize=choosePreview(map.getOutputSizes(SurfaceTexture.class),jpegSize);
    SurfaceTexture surface=texture.getSurfaceTexture();if(surface==null)return;
    surface.setDefaultBufferSize(previewSize.getWidth(),previewSize.getHeight());previewSurface=new Surface(surface);configureTransform();
@@ -123,12 +131,12 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  }
  private static Size chooseJpeg(Size[] sizes,int target){
   Size best=sizes[0];double score=Double.MAX_VALUE;
-  for(Size size:sizes){double s=Math.abs(Math.log((double)Math.max(size.getWidth(),size.getHeight())/target));if((long)size.getWidth()*size.getHeight()>12000000)s+=3;if(s<score){score=s;best=size;}}
+  for(Size size:sizes){double s=Math.abs(Math.log((double)Math.max(size.getWidth(),size.getHeight())/target));if((long)size.getWidth()*size.getHeight()>13000000)s+=3;if(s<score){score=s;best=size;}}
   return best;
  }
- private static Size choosePreview(Size[] sizes,Size photo){
+ private Size choosePreview(Size[] sizes,Size photo){
   Size best=sizes[0];double score=Double.MAX_VALUE,ratio=(double)photo.getWidth()/photo.getHeight();
-  for(Size size:sizes){double s=Math.abs((double)size.getWidth()/size.getHeight()-ratio)*100+Math.abs(Math.log((double)Math.max(size.getWidth(),size.getHeight())/1280));if(Math.max(size.getWidth(),size.getHeight())>1920)s+=10;if(s<score){score=s;best=size;}}
+  for(Size size:sizes){double s=Math.abs((double)size.getWidth()/size.getHeight()-ratio)*100+Math.abs(Math.log((double)Math.max(size.getWidth(),size.getHeight())/("smooth".equals(profile)?1280:1920)));if(Math.max(size.getWidth(),size.getHeight())>1920)s+=10;if(s<score){score=s;best=size;}}
   return best;
  }
  private void configureSession(final int current){
@@ -172,6 +180,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   int[] focus=lens.info.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
   if(focus!=null)for(int value:focus)if(value==CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE){builder.set(CaptureRequest.CONTROL_AF_MODE,value);break;}
   builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,exposureRange().clamp(exposure));
+  applyZoom(builder);
   Range<Integer>[] fps=lens.info.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);Range<Integer> chosen=null;
   if(fps!=null)for(Range<Integer> range:fps)if(range.getUpper()<=30&&(chosen==null||range.getUpper()>chosen.getUpper()||(range.getUpper().equals(chosen.getUpper())&&range.getLower()<chosen.getLower())))chosen=range;
   if(chosen!=null)builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,chosen);
@@ -179,9 +188,35 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  private JSONObject metadata() throws JSONException {
   JSONObject value=new JSONObject();boolean swap=rotation()%180!=0;
   value.put("id",lens.key);value.put("width",swap?jpegSize.getHeight():jpegSize.getWidth());value.put("height",swap?jpegSize.getWidth():jpegSize.getHeight());
+  value.put("zoomMin",zoomRange().getLower());value.put("zoomMax",zoomRange().getUpper());value.put("zoom",zoom);
   value.put("exposureMin",exposureRange().getLower());value.put("exposureMax",exposureRange().getUpper());
   Rational step=lens.info.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP);value.put("exposureStep",step==null?0:step.doubleValue());
   Integer facing=lens.info.get(CameraCharacteristics.LENS_FACING);value.put("facing",facing!=null&&facing==CameraCharacteristics.LENS_FACING_FRONT?"user":"environment");return value;
+ }
+ private Range<Float> zoomRange(){
+  if(controlInfo==null)return new Range<>(1f,1f);
+  // A forced physical output has a different sensor coordinate system. Only
+  // crop it when this device explicitly exposes the physical request key.
+  if(lens.physical!=null){
+   List<CaptureRequest.Key<?>> keys=controlInfo.getAvailablePhysicalCameraRequestKeys();
+   if(keys==null||!keys.contains(CaptureRequest.SCALER_CROP_REGION))return new Range<>(1f,1f);
+  }else if(Build.VERSION.SDK_INT>=30){Range<Float> range=controlInfo.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE);if(range!=null)return range;}
+  Float max=lens.info.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
+  return new Range<>(1f,max==null?1f:Math.max(1f,max));
+ }
+ private void applyZoom(CaptureRequest.Builder builder){
+  if(lens.physical==null&&Build.VERSION.SDK_INT>=30&&controlInfo.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)!=null){builder.set(CaptureRequest.CONTROL_ZOOM_RATIO,zoom);return;}
+  if(zoomRange().getUpper()<=1f)return;
+  Rect active=lens.info.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);if(active==null)return;
+  int width=Math.max(2,(int)(active.width()/zoom)),height=Math.max(2,(int)(active.height()/zoom));
+  Rect crop=new Rect(active.left+(active.width()-width)/2,active.top+(active.height()-height)/2,active.left+(active.width()-width)/2+width,active.top+(active.height()-height)/2+height);
+  if(lens.physical==null)builder.set(CaptureRequest.SCALER_CROP_REGION,crop);else builder.setPhysicalCameraKey(CaptureRequest.SCALER_CROP_REGION,crop,lens.physical);
+ }
+ void setZoom(float value){
+  if(session==null||preview==null||lens==null||Float.isNaN(value)||Float.isInfinite(value))return;
+  float previous=zoom;zoom=zoomRange().clamp(value);
+  try{applyZoom(preview);session.setRepeatingRequest(preview.build(),null,main);listener.zoom(metadata());}
+  catch(Exception e){zoom=previous;try{applyZoom(preview);JSONObject result=metadata();result.put("error","Zoom konnte nicht geändert werden.");listener.zoom(result);}catch(Exception ignored){}}
  }
  void setExposure(int value){
   if(session==null||preview==null||lens==null)return;exposure=exposureRange().clamp(value);
@@ -193,6 +228,10 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   photoRequest=token;
   try{
    CaptureRequest.Builder still=device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);still.addTarget(reader.getSurface());controls(still);
+   int[] noise=lens.info.get(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES);
+   if(noise!=null)for(int mode:noise)if(mode==CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY){still.set(CaptureRequest.NOISE_REDUCTION_MODE,mode);break;}
+   int[] edges=lens.info.get(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES);
+   if(edges!=null)for(int mode:edges)if(mode==CaptureRequest.EDGE_MODE_HIGH_QUALITY){still.set(CaptureRequest.EDGE_MODE,mode);break;}
    still.set(CaptureRequest.JPEG_ORIENTATION,rotation());still.set(CaptureRequest.JPEG_QUALITY,(byte)96);
    session.capture(still.build(),new CameraCaptureSession.CaptureCallback(){
     @Override public void onCaptureFailed(CameraCaptureSession session,CaptureRequest capture,CaptureFailure failure){if(token.equals(photoRequest))failPhoto("Die Aufnahme ist fehlgeschlagen. Bitte erneut versuchen.");}

@@ -33,17 +33,20 @@ export default function Home() {
   const stageRef = useRef<HTMLDivElement>(null);
   const captureLockRef = useRef(false);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const gesture = useRef<{ center: { x: number; y: number }; distance: number; angle: number; transform: Transform } | null>(null);
+  const gesture = useRef<{ center: { x: number; y: number }; distance: number; angle: number; zoom: number; transform: Transform } | null>(null);
   const [cameraState, setCameraState] = useState<CameraState>("idle");
   const [cameraError, setCameraError] = useState("");
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [cameraProfile, setCameraProfile] = useState<'smooth' | 'detail'>(() => {
-    try { return typeof window !== 'undefined' && localStorage.getItem('zeitblick-camera-profile') === 'detail' ? 'detail' : 'smooth'; } catch { return 'smooth'; }
+    try { return typeof window !== 'undefined' && localStorage.getItem('zeitblick-camera-profile-v2') === 'smooth' ? 'smooth' : 'detail'; } catch { return 'detail'; }
   });
   const [comparison, setComparison] = useState<'overlay' | 'side'>('overlay');
   const [lenses, setLenses] = useState<NativeLens[]>([]);
   const [selectedLens, setSelectedLens] = useState('');
   const [cameraInfo, setCameraInfo] = useState<NativeCamera | null>(null);
+  const [cameraZoom, setCameraZoom] = useState(1);
+  const zoomMemory = useRef<{id:string;value:number}|null>(null);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [exposure, setExposure] = useState(0);
   const [nativeActive, setNativeActive] = useState(true);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
@@ -136,7 +139,7 @@ export default function Home() {
         const info = await openNativeCamera(selectedLens, cameraProfile);
         if (request !== requestRef.current) return;
         activeNativeRequest.current = info.requestId;
-        setCameraInfo(info); setExposure(0); setFacing(info.facing);
+        setCameraInfo(info); const remembered=zoomMemory.current?.id===info.id?Math.max(info.zoomMin ?? 1,Math.min(info.zoomMax ?? 1,zoomMemory.current.value)):info.zoom ?? 1;setCameraZoom(remembered);zoomMemory.current={id:info.id,value:remembered};if(remembered!==(info.zoom ?? 1))androidBridge()?.setZoom?.(remembered);setExposure(0); setFacing(info.facing);
         setVideoSize({width: info.width, height: info.height}); setCameraState('ready');
       } catch(error) { if(request === requestRef.current) { setCameraState('error'); setCameraError((error as Error).message); } }
       return;
@@ -192,7 +195,7 @@ export default function Home() {
   }, [nativeApp, nativeActive, reviewOpen, cameraProfile, selectedLens, workMode]);
 
   useEffect(() => {
-    try { localStorage.setItem('zeitblick-camera-profile', cameraProfile); } catch { /* Optional preference. */ }
+    try { localStorage.setItem('zeitblick-camera-profile-v2', cameraProfile); } catch { /* Optional preference. */ }
   }, [cameraProfile]);
 
   useEffect(() => {
@@ -203,10 +206,16 @@ export default function Home() {
         activeNativeRequest.current = null; setCameraState('error'); setCameraError(data.error);
       }
     };
+    const zoomed = (event: Event) => {const d=(event as CustomEvent).detail;setCameraZoom(d.zoom ?? 1);if(d.error)toast.error(d.error);};
+    window.addEventListener('zeitblick-zoom', zoomed);
     window.addEventListener('zeitblick-cameras', update);
     window.addEventListener('zeitblick-camera-result', interrupted);
-    return () => {window.removeEventListener('zeitblick-cameras', update);window.removeEventListener('zeitblick-camera-result', interrupted);};
+    return () => {window.removeEventListener('zeitblick-zoom', zoomed);window.removeEventListener('zeitblick-cameras', update);window.removeEventListener('zeitblick-camera-result', interrupted);};
   }, []);
+  function changeCameraZoom(value: number) {
+    const next=Math.max(cameraInfo?.zoomMin ?? 1,Math.min(cameraInfo?.zoomMax ?? 1,value));
+    if(cameraInfo)zoomMemory.current={id:cameraInfo.id,value:next};setCameraZoom(next);androidBridge()?.setZoom?.(next);
+  }
   function switchCamera() {
     if (androidBridge()?.startCamera) {
       const next = lenses.find(lens => lens.facing !== facing);
@@ -274,19 +283,23 @@ export default function Home() {
     const values = Array.from(pointers.current.values());
     if (!values.length) { gesture.current = null; return; }
     const center = values.length > 1 ? { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 } : values[0];
-    gesture.current = { center, angle: values.length > 1 ? Math.atan2(values[1].y-values[0].y, values[1].x-values[0].x) : 0, distance: values.length > 1 ? Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y) : 0, transform: { ...transformRef.current } };
+    gesture.current = { center, zoom:cameraZoom, angle: values.length > 1 ? Math.atan2(values[1].y-values[0].y, values[1].x-values[0].x) : 0, distance: values.length > 1 ? Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y) : 0, transform: { ...transformRef.current } };
   }
   function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!reference || locked || (!overlayVisible && comparison !== "side")) return;
+    if (capturing || cameraState !== "ready") return;
     event.currentTarget.setPointerCapture(event.pointerId);
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     resetGesture();
   }
   function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    if (!pointers.current.has(event.pointerId) || !gesture.current || locked) return;
+    if (!pointers.current.has(event.pointerId) || !gesture.current) return;
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const values = Array.from(pointers.current.values());
     const g = gesture.current;
+    if(!reference || locked || !overlayVisible){
+      if(nativeApp && values.length>1 && g.distance>0)changeCameraZoom(g.zoom*Math.hypot(values[1].x-values[0].x,values[1].y-values[0].y)/g.distance);
+      return;
+    }
     const rect = event.currentTarget.getBoundingClientRect();
     const center = values.length > 1 ? { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 } : values[0];
     const scale = values.length > 1 && g.distance > 0 ? g.transform.scale * Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y) / g.distance : g.transform.scale;
@@ -402,18 +415,23 @@ export default function Home() {
         </div>
         <div className="viewfinder-top"><span className={`camera-status ${cameraState === "ready" ? "active" : ""}`}>{cameraState === "ready" ? "LIVE" : cameraState === "starting" ? "VERBINDET" : cameraState === "error" ? "KAMERA INAKTIV" : "SUCHER"}</span><div>{!nativeApp && cameraState === "ready" && <button className="icon-button glass-button" onClick={stopCamera} aria-label="Kamera ausschalten"><CameraOff size={18} /></button>}{reference && <button className={`icon-button glass-button ${locked ? "selected" : ""}`} onClick={() => setLocked(!locked)} aria-label={locked ? "Vorlage lösen" : "Vorlage fixieren"} aria-pressed={locked}><LockKeyhole size={18} /></button>}</div></div>
         {cameraState !== "ready" && <div className={`camera-empty ${reference ? "with-reference" : ""}`}><div className="camera-empty-content"><span className="empty-camera-icon">{cameraState === "starting" ? <LoaderCircle className="spin" size={32} /> : cameraState === "error" ? <CameraOff size={32} strokeWidth={1.4} /> : <Camera size={36} strokeWidth={1.35} />}</span><h1>{cameraState === "starting" ? "Deine Kamera wird gestartet …" : cameraState === "error" ? "Noch kein Kamerabild" : "Damals im Blick."}</h1><p>{cameraState === "starting" ? nativeApp ? "Die Kamera öffnet sich automatisch." : "Bitte erlaube den Kamerazugriff in deinem Browser." : cameraError || (nativeApp ? "Die Kamera öffnet sich automatisch." : "Lege dein historisches Foto über die heutige Aussicht.")}</p>{(!nativeApp || cameraState === "error") && <button className="primary-button" onClick={() => cameraState === "starting" ? stopCamera() : startCamera()}>{cameraState === "starting" ? "Abbrechen" : <><Camera size={18} />{cameraState === "error" ? "Erneut versuchen" : "Kamera starten"}</>}</button>}<span className="camera-permission-note"><ShieldCheck size={13} />Privat und werbefrei</span></div></div>}
+        {nativeApp && cameraState === 'ready' && <div className="camera-zoom-panel">
+          <button className="zoom-toggle" onClick={()=>setZoomOpen(!zoomOpen)} aria-expanded={zoomOpen}>Kamera · {cameraZoom.toFixed(1)}×</button>
+          {zoomOpen && <div className="zoom-popover"><label>Kamera-Zoom · {cameraZoom.toFixed(2)}×<input aria-label="Kamera-Zoom" type="range" min={cameraInfo?.zoomMin ?? 1} max={cameraInfo?.zoomMax ?? 1} step={.01} value={cameraZoom} disabled={capturing || (cameraInfo?.zoomMax ?? 1)<=(cameraInfo?.zoomMin ?? 1)} onChange={e=>changeCameraZoom(+e.target.value)}/></label><div className="zoom-presets">{Array.from(new Set([cameraInfo?.zoomMin ?? 1,1,2,3,5,10])).filter(z=>z>=(cameraInfo?.zoomMin ?? 1)&&z<=(cameraInfo?.zoomMax ?? 1)).sort((a,b)=>a-b).map(z=><button key={z} disabled={capturing} aria-pressed={Math.abs(cameraZoom-z)<.02} onClick={()=>changeCameraZoom(z)}>{Number(z.toFixed(1))}×</button>)}</div>{(cameraInfo?.zoomMax ?? 1)<=1&&<small>Diese feste Linse bietet keinen Zoom. Wähle eine Auto-Kamera.</small>}<small>Zwei Finger zoomen die Kamera, wenn die Vorlage fixiert oder ausgeblendet ist.</small></div>}
+        </div>}
         <div className="viewfinder-bottom"><span>{reference ? <>{locked ? <LockKeyhole size={13} /> : <Move size={13} />}{locked ? "Vorlage fixiert" : "Ziehen · zoomen · drehen"}</> : "Vorlage unten auswählen"}</span>{cameraState === "ready" && <span>{crop?.width} × {crop?.height}</span>}</div>
         </div>
       </main>
       <footer className="camera-dock"><div className="dock-inner">
-        {nativeApp && <div className="lens-row"><select aria-label="Kameralinse" value={selectedLens || cameraInfo?.id || ''} onChange={event => setSelectedLens(event.target.value)} disabled={capturing}>{!lenses.length && <option value="">Kamera wird gesucht …</option>}{lenses.map(lens => <option key={lens.id} value={lens.id}>{lens.label}</option>)}</select><button className="quiet-button" onClick={() => setSettingsOpen(true)}>EV {(exposure*(cameraInfo?.exposureStep || 0)).toFixed(1)}</button></div>}
+        {nativeApp && <div className="lens-presets" aria-label="Verfügbare Kameralinsen">{lenses.filter(l=>l.facing===facing).map(l=><button key={l.id} disabled={capturing||cameraState==='starting'} aria-pressed={l.id===cameraInfo?.id} onClick={()=>setSelectedLens(l.id)}>{l.equivalent?`${Math.round(l.equivalent)} mm`:l.label}{l.label.includes('Auto')?' · Auto':''}</button>)}<button onClick={()=>setSettingsOpen(true)}>EV {(exposure*(cameraInfo?.exposureStep || 0)).toFixed(1)}</button></div>}
+
         <div className="opacity-row"><button className={`icon-button ${reference && overlayVisible ? "selected" : ""}`} onClick={() => setOverlayVisible(!overlayVisible)} disabled={!reference} aria-label={overlayVisible ? "Vorlage ausblenden" : "Vorlage anzeigen"} aria-pressed={overlayVisible}>{overlayVisible ? <Eye size={20} /> : <EyeOff size={20} />}</button><div className="opacity-control"><label id="opacity-label">Deckkraft <output>{opacity} %</output></label><LabeledSlider className="control-slider" aria-labelledby="opacity-label" min={0} max={100} step={1} value={[opacity]} onValueChange={([value]) => setOpacity(value)} disabled={!reference} /></div><button className="reference-button" onClick={chooseReference} disabled={loadingImage}>{loadingImage ? <LoaderCircle className="spin" size={19} /> : reference ? <img src={reference.url} alt="Geladene Vorlage" /> : <ImagePlus size={21} />}<span>{reference ? "Wechseln" : "Vorlage"}</span></button></div>
         <div className="shutter-row"><button className="last-photo" onClick={() => setReviewOpen(true)} disabled={!capture} aria-label="Letztes Foto vergleichen">{capture ? <img src={capture.url} alt="Letztes Foto ohne Overlay" /> : <ImagePlus size={23} strokeWidth={1.5} />}</button><div className="shutter-wrap"><button className="shutter" onClick={takePhoto} disabled={cameraState !== "ready" || capturing} aria-label="Foto aufnehmen"><span>{capturing ? <LoaderCircle className="spin" size={28} /> : <Camera size={28} strokeWidth={1.5} />}</span></button></div><button className="camera-switch icon-button" disabled={cameraState === "starting"} onClick={switchCamera} aria-label="Kamera wechseln"><SwitchCamera size={26} /></button></div>
         <button className="save-summary" onClick={() => setSettingsOpen(true)}>{saveMode === "both" && reference ? <Layers2 size={13} /> : <Check size={13} />}{!reference || saveMode === "clean" ? "Foto ohne Overlay" : saveMode === "both" ? "Beide Varianten speichern" : "Foto mit Overlay"}<ChevronDown size={13} /></button>
       </div></footer>
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetContent side="bottom" className="settings-sheet" showCloseButton={false}><div className="sheet-inner"><div className="sheet-heading"><div><SheetTitle>Dein Blick, deine Einstellungen.</SheetTitle><SheetDescription>Die Vorlage bleibt unabhängig vom gespeicherten Foto.</SheetDescription></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Einstellungen schließen"><X size={21} /></button></div><div className="settings-grid">
         <section className="settings-section"><h2>Vorlage ausrichten</h2><div className="range-heading"><label id="scale-label"><ZoomIn size={15} />Größe</label><output>{Math.round(transform.scale * 100)} %</output></div><LabeledSlider className="control-slider" aria-labelledby="scale-label" value={[transform.scale * 100]} onValueChange={([value]) => setTransform(t => ({ ...t, scale: value / 100 }))} min={25} max={400} step={1} disabled={!reference || locked} /><div className="range-heading"><label id="rotation-label"><RotateCw size={15} />Drehung</label><output>{Math.round(transform.rotation)}°</output></div><LabeledSlider className="control-slider" aria-labelledby="rotation-label" value={[transform.rotation]} onValueChange={([value]) => setTransform(t => ({ ...t, rotation: value }))} min={-180} max={180} step={1} disabled={!reference || locked} /><div className="setting-row"><label htmlFor="lock-overlay"><LockKeyhole size={15} />Position fixieren</label><Switch className="app-switch" id="lock-overlay" checked={locked} onCheckedChange={setLocked} disabled={!reference} /></div><div className="setting-buttons"><button className="quiet-button" disabled={!reference} onClick={() => { setTransform(INITIAL); setLocked(false); }}><RotateCcw size={15} />Zurücksetzen</button><button className="quiet-button" disabled={!reference} onClick={removeReference}><X size={15} />Vorlage entfernen</button></div></section>
-        <section className="settings-section">{nativeApp && <div className="camera-quality"><label id="exposure-label">Belichtung · {(exposure*(cameraInfo?.exposureStep || 0)).toFixed(1)} EV</label><LabeledSlider className="control-slider" aria-labelledby="exposure-label" min={cameraInfo?.exposureMin || 0} max={cameraInfo?.exposureMax || 1} step={1} value={[exposure]} disabled={cameraState !== 'ready' || !cameraInfo || cameraInfo.exposureMax === cameraInfo.exposureMin} onValueChange={([value]) => {setExposure(value);androidBridge()?.setExposure?.(value);}} /><button className="quiet-button" onClick={() => {setExposure(0);androidBridge()?.setExposure?.(0);}}>Belichtung zurücksetzen</button><p>Heller oder dunkler über die Belichtungskorrektur deiner Kamera.</p><label htmlFor="camera-profile">Kamera-Auflösung</label><select id="camera-profile" value={cameraProfile} onChange={event => setCameraProfile(event.target.value as "smooth" | "detail")}><option value="smooth">Flüssig · Full HD</option><option value="detail">Mehr Details · 4K</option></select><p>Gilt auch für gespeicherte Fotos. 4K benötigt mehr Leistung; die tatsächliche Auflösung hängt von deiner Kamera ab.</p></div>}<h2>Standard beim Speichern</h2><SaveModeControl id="camera-save" value={saveMode} onChange={setSaveMode} hasOverlay={hasOverlay} /><p className="setting-explanation">Du kannst die Auswahl nach der Aufnahme noch ändern. „Beide“ speichert zwei Varianten desselben Moments.</p><button className="help-link" onClick={() => { setSettingsOpen(false); setHelpOpen(true); }}><Smartphone size={19} /><span>{nativeApp ? "Hilfe & Android-App" : "Hilfe & zum Startbildschirm hinzufügen"}</span></button><p className="privacy-note"><ShieldCheck size={14} />Deine Bilder werden lokal auf deinem Gerät verarbeitet.</p></section>
+        <section className="settings-section">{nativeApp && <div className="camera-quality"><label id="exposure-label">Belichtung · {(exposure*(cameraInfo?.exposureStep || 0)).toFixed(1)} EV</label><LabeledSlider className="control-slider" aria-labelledby="exposure-label" min={cameraInfo?.exposureMin || 0} max={cameraInfo?.exposureMax || 1} step={1} value={[exposure]} disabled={cameraState !== 'ready' || !cameraInfo || cameraInfo.exposureMax === cameraInfo.exposureMin} onValueChange={([value]) => {setExposure(value);androidBridge()?.setExposure?.(value);}} /><button className="quiet-button" onClick={() => {setExposure(0);androidBridge()?.setExposure?.(0);}}>Belichtung zurücksetzen</button><p>Heller oder dunkler über die Belichtungskorrektur deiner Kamera.</p><label htmlFor="camera-profile">Vorschauqualität</label><select id="camera-profile" value={cameraProfile} onChange={event => setCameraProfile(event.target.value as "smooth" | "detail")}><option value="smooth">Sparsam · 720p Vorschau</option><option value="detail">Scharf · Full-HD-Vorschau</option></select><p>Fotos werden in beiden Modi mit bis zu etwa 12 Megapixeln aufgenommen. Auflösung und Zoom hängen von der gewählten Kamera ab; Digitalzoom verringert die Detailqualität.</p></div>}<h2>Standard beim Speichern</h2><SaveModeControl id="camera-save" value={saveMode} onChange={setSaveMode} hasOverlay={hasOverlay} /><p className="setting-explanation">Du kannst die Auswahl nach der Aufnahme noch ändern. „Beide“ speichert zwei Varianten desselben Moments.</p><button className="help-link" onClick={() => { setSettingsOpen(false); setHelpOpen(true); }}><Smartphone size={19} /><span>{nativeApp ? "Hilfe & Android-App" : "Hilfe & zum Startbildschirm hinzufügen"}</span></button><p className="privacy-note"><ShieldCheck size={14} />Deine Bilder werden lokal auf deinem Gerät verarbeitet.</p></section>
       </div></div></SheetContent></Sheet>
       {capture && <CaptureReview key={capture.id} capture={capture} initialSide={comparison === "side"} open={reviewOpen} onOpenChange={setReviewOpen} mode={saveMode} setMode={setSaveMode} />}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent className="help-dialog" showCloseButton={false}><button className="dialog-close icon-button" aria-label="Hilfe schließen" onClick={() => setHelpOpen(false)}><X size={21} /></button><DialogTitle>Ein Ort. Zwei Zeiten.</DialogTitle><DialogDescription>So hältst du die Perspektive von damals fest.</DialogDescription><ol className="help-steps"><li><strong>Vorlage auswählen</strong><p>Wähle unten dein historisches Bild aus. Mit dem Auge blendest du es im Sucher ein und aus. {nativeApp && "Auch HEIC/HEIF, JPG, PNG, WebP, BMP und GIF lassen sich öffnen; AVIF, wenn Android es unterstützt. Große Vorlagen werden für die App verkleinert, die Originaldatei bleibt erhalten."}</p></li><li><strong>Ausrichten & aufnehmen</strong><p>{nativeApp ? "Die Kamera startet automatisch. Regle die Deckkraft und richte die Perspektive aus." : "Starte die Kamera, regle die Deckkraft und richte die Perspektive aus."} Du kannst die Vorlage ziehen, mit zwei Fingern zoomen und direkt drehen. Oben wechselst du zum Vergleich nebeneinander.</p></li><li><strong>Genau vergleichen</strong><p>Nach dem Auslösen zoomst du mit zwei Fingern oder den Plus- und Minus-Tasten bis zu 6× in die Aufnahme. Blende die Vorlage ein und aus oder ändere ihre Deckkraft. Der Zoom dient nur der Kontrolle und beschneidet dein Foto nicht.</p></li><li><strong>Eine oder beide Varianten speichern</strong><p>Wähle „Ohne Overlay“, „Mit Overlay“ oder „Beide“. Bei „Beide“ bekommst du zwei JPGs aus derselben Aufnahme. {!nativeApp && "Unterstützt dein Gerät den gemeinsamen Speicherdialog nicht, enthält der ZIP-Download beide Dateien."}</p></li></ol><div className="install-help"><Smartphone size={22} /><div><strong>{nativeApp ? "Zeitblick für Android" : "Wie eine App öffnen"}</strong><p>{nativeApp ? "Deine Fotos werden direkt im Album Zeitblick in deiner Galerie gespeichert. Die App verarbeitet deine Bilder lokal und funktioniert ohne Internet." : "Android: Im Chrome-Menü „Zum Startbildschirm hinzufügen“ wählen. iPhone: In Safari über „Teilen“ zum Home-Bildschirm hinzufügen."}</p>{installPrompt && <button className="primary-button" onClick={async () => { try { await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null); } catch { toast.error("Nutze zum Hinzufügen bitte das Menü deines Browsers."); } }}>App hinzufügen</button>}</div></div><p className="help-footnote">Die Auflösung und verfügbaren Linsen hängen von deinem Gerät ab. Speichere Fotos vor dem Neuladen. Vorlage und Aufnahme bleiben nur für diese Sitzung verfügbar.</p></DialogContent></Dialog>

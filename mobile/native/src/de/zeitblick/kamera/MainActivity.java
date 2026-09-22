@@ -43,6 +43,7 @@ public final class MainActivity extends Activity {
   texture=new android.view.TextureView(this);
   root.addView(texture,new FrameLayout.LayoutParams(1,1));
   camera=new CameraController(this,texture,new CameraController.Listener(){
+   public void zoom(JSONObject value){emit("zeitblick-zoom",value);}
    public void cameras(JSONArray choices){emit("zeitblick-cameras",json("cameras",choices));}
    public void ready(String id,JSONObject value){try{value.put("requestId",id);}catch(Exception ignored){}emit("zeitblick-camera-result",value);}
    public void error(String id,String error){emit("zeitblick-camera-result",result(id,error));}
@@ -177,6 +178,7 @@ public final class MainActivity extends Activity {
  public final class PhotoStorage {
   @JavascriptInterface public void startCamera(String lens,String quality,String id){runOnUiThread(() -> openCamera(lens,quality,id));}
   @JavascriptInterface public void stopCamera(){runOnUiThread(() -> {pendingCamera=null;camera.stop();});}
+  @JavascriptInterface public void setZoom(float value){runOnUiThread(() -> camera.setZoom(value));}
   @JavascriptInterface public void capturePhoto(String id){runOnUiThread(() -> camera.capture(id));}
   @JavascriptInterface public void setExposure(int value){runOnUiThread(() -> camera.setExposure(value));}
   @JavascriptInterface public void setPreviewBounds(double x,double y,double width,double height,double density){runOnUiThread(() -> {

@@ -1,4 +1,4 @@
-type AndroidBridge = { saveMedia?: (payload: string) => void; startCamera?: (lens: string, quality: string, id: string) => void; stopCamera?: () => void; capturePhoto?: (id: string) => void; setExposure?: (value: number) => void; setPreviewBounds?: (x: number, y: number, width: number, height: number, density: number) => void; savePhotos: (payload: string) => void; pickReference?: (requestId: string) => void; releaseReference?: (url: string) => void };
+type AndroidBridge = { saveMedia?: (payload: string) => void; startCamera?: (lens: string, quality: string, id: string) => void; stopCamera?: () => void; capturePhoto?: (id: string) => void; setZoom?: (value: number) => void; setExposure?: (value: number) => void; setPreviewBounds?: (x: number, y: number, width: number, height: number, density: number) => void; savePhotos: (payload: string) => void; pickReference?: (requestId: string) => void; releaseReference?: (url: string) => void };
 export function androidBridge(): AndroidBridge | undefined {
   return typeof window !== 'undefined' ? (window as Window & { ZeitblickAndroid?: AndroidBridge }).ZeitblickAndroid : undefined;
 }
@@ -23,8 +23,8 @@ export async function saveToAndroid(files: File[]): Promise<void> {
   });
 }
 
-export type NativeLens = { id: string; label: string; facing: 'environment' | 'user' };
-export type NativeCamera = { requestId: string; id: string; width: number; height: number; facing: 'environment' | 'user'; exposureMin: number; exposureMax: number; exposureStep: number };
+export type NativeLens = { id: string; label: string; equivalent?: number; facing: 'environment' | 'user' };
+export type NativeCamera = { requestId: string; id: string; width: number; height: number; facing: 'environment' | 'user'; zoomMin?: number; zoomMax?: number; zoom?: number; exposureMin: number; exposureMax: number; exposureStep: number };
 function nativeRequest<T>(eventName: string, invoke: (id: string) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
