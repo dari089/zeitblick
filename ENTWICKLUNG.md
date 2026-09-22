@@ -1,6 +1,6 @@
 # Zeitblick selbst weiterentwickeln
 
-Aktueller Stand: Android 1.7.0, Paket `de.zeitblick.kamera`.
+Aktueller Stand: Android 1.7.1, Paket `de.zeitblick.kamera`.
 
 ## Wo ist welcher Code?
 

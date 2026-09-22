@@ -52,7 +52,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  private int generation,exposure;
  private float zoom=1f;
  private CameraCharacteristics controlInfo;
- private boolean wanted;
+ private boolean wanted,previewReady;
  private String requestedLens="",profile="smooth",request="";
  private volatile String photoRequest;
 
@@ -62,7 +62,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   displays=(android.hardware.display.DisplayManager)activity.getSystemService(Context.DISPLAY_SERVICE);
   displays.registerDisplayListener(displayListener,main);
   imageThread.start();images=new Handler(imageThread.getLooper());
-  texture.setSurfaceTextureListener(this);
+  texture.setAlpha(0f);texture.setSurfaceTextureListener(this);
  }
  private static boolean hasJpeg(CameraCharacteristics info){StreamConfigurationMap map=info.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);return map!=null&&map.getOutputSizes(ImageFormat.JPEG)!=null&&map.getOutputSizes(SurfaceTexture.class)!=null;}
  private double equivalent(CameraCharacteristics info){
@@ -148,14 +148,23 @@ final class CameraController implements TextureView.SurfaceTextureListener {
      if(current!=generation||device==null){configured.close();return;}
      session=configured;
      try{
-      exposure=0;preview=device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);preview.addTarget(previewSurface);controls(preview);
-      session.setRepeatingRequest(preview.build(),null,main);
-      listener.ready(request,metadata());
-     }catch(Exception e){fail("Das Kamerabild konnte nicht gestartet werden.");}
+      exposure=0;preview=newRequest(CameraDevice.TEMPLATE_PREVIEW);preview.addTarget(previewSurface);controls(preview);
+      final JSONObject info=metadata();previewReady=false;
+      session.setRepeatingRequest(preview.build(),new CameraCaptureSession.CaptureCallback(){
+       @Override public void onCaptureCompleted(CameraCaptureSession active,CaptureRequest sent,TotalCaptureResult result){
+        if(current!=generation||previewReady)return;
+        previewReady=true;texture.setAlpha(1f);listener.ready(request,info);
+       }
+      },main);
+      main.postDelayed(() -> {if(current==generation&&!previewReady)fail("Die Kamera liefert kein Bild. Bitte wähle eine andere Linse.");},10000);
+     }catch(Exception e){fail("Das Kamerabild konnte nicht gestartet werden ("+e.getClass().getSimpleName()+"). Bitte wähle eine andere Linse.");}
     }
     @Override public void onConfigureFailed(CameraCaptureSession failed){if(current==generation)fail("Android unterstützt diese Linse nicht mit Fotoaufnahme. Bitte wähle eine andere Linse.");}
    },main);
   }catch(Exception e){fail("Diese Kamera-Konfiguration ist nicht verfügbar. Bitte wähle eine andere Linse.");}
+ }
+ private CaptureRequest.Builder newRequest(int template) throws CameraAccessException {
+  return lens.physical==null?device.createCaptureRequest(template):device.createCaptureRequest(template,Collections.singleton(lens.physical));
  }
  private int rotation(){
   int display=activity.getWindowManager().getDefaultDisplay().getRotation()*90;
@@ -174,14 +183,14 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   matrix.postRotate(transform[2],cx,cy);
   texture.setTransform(matrix);
  }
- private Range<Integer> exposureRange(){Range<Integer> range=lens.info.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);return range==null?new Range<>(0,0):range;}
+ private Range<Integer> exposureRange(){Range<Integer> range=controlInfo.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);return range==null?new Range<>(0,0):range;}
  private void controls(CaptureRequest.Builder builder){
   builder.set(CaptureRequest.CONTROL_MODE,CaptureRequest.CONTROL_MODE_AUTO);builder.set(CaptureRequest.CONTROL_AE_MODE,CaptureRequest.CONTROL_AE_MODE_ON);
-  int[] focus=lens.info.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
+  int[] focus=controlInfo.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
   if(focus!=null)for(int value:focus)if(value==CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE){builder.set(CaptureRequest.CONTROL_AF_MODE,value);break;}
   builder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,exposureRange().clamp(exposure));
   applyZoom(builder);
-  Range<Integer>[] fps=lens.info.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);Range<Integer> chosen=null;
+  Range<Integer>[] fps=controlInfo.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);Range<Integer> chosen=null;
   if(fps!=null)for(Range<Integer> range:fps)if(range.getUpper()<=30&&(chosen==null||range.getUpper()>chosen.getUpper()||(range.getUpper().equals(chosen.getUpper())&&range.getLower()<chosen.getLower())))chosen=range;
   if(chosen!=null)builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,chosen);
  }
@@ -190,7 +199,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   value.put("id",lens.key);value.put("width",swap?jpegSize.getHeight():jpegSize.getWidth());value.put("height",swap?jpegSize.getWidth():jpegSize.getHeight());
   value.put("zoomMin",zoomRange().getLower());value.put("zoomMax",zoomRange().getUpper());value.put("zoom",zoom);
   value.put("exposureMin",exposureRange().getLower());value.put("exposureMax",exposureRange().getUpper());
-  Rational step=lens.info.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP);value.put("exposureStep",step==null?0:step.doubleValue());
+  Rational step=controlInfo.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP);value.put("exposureStep",CameraNumbers.finiteOr(step==null?0:step.doubleValue(),0));
   Integer facing=lens.info.get(CameraCharacteristics.LENS_FACING);value.put("facing",facing!=null&&facing==CameraCharacteristics.LENS_FACING_FRONT?"user":"environment");return value;
  }
  private Range<Float> zoomRange(){
@@ -200,12 +209,12 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   if(lens.physical!=null){
    List<CaptureRequest.Key<?>> keys=controlInfo.getAvailablePhysicalCameraRequestKeys();
    if(keys==null||!keys.contains(CaptureRequest.SCALER_CROP_REGION))return new Range<>(1f,1f);
-  }else if(Build.VERSION.SDK_INT>=30){Range<Float> range=controlInfo.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE);if(range!=null)return range;}
+  }else if(Build.VERSION.SDK_INT>=30){Range<Float> range=controlInfo.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE);if(range!=null&&CameraNumbers.validZoom(range.getLower(),range.getUpper()))return range;}
   Float max=lens.info.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
-  return new Range<>(1f,max==null?1f:Math.max(1f,max));
+  return new Range<>(1f,max==null?1f:(float)Math.max(1,CameraNumbers.finiteOr(max,1)));
  }
  private void applyZoom(CaptureRequest.Builder builder){
-  if(lens.physical==null&&Build.VERSION.SDK_INT>=30&&controlInfo.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)!=null){builder.set(CaptureRequest.CONTROL_ZOOM_RATIO,zoom);return;}
+  if(lens.physical==null&&Build.VERSION.SDK_INT>=30&&controlInfo.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)!=null&&zoomRange().getUpper()>zoomRange().getLower()){builder.set(CaptureRequest.CONTROL_ZOOM_RATIO,zoom);return;}
   if(zoomRange().getUpper()<=1f)return;
   Rect active=lens.info.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);if(active==null)return;
   int width=Math.max(2,(int)(active.width()/zoom)),height=Math.max(2,(int)(active.height()/zoom));
@@ -227,7 +236,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
   if(photoRequest!=null){listener.photoError(token,"Eine Aufnahme wird bereits erstellt.");return;}
   photoRequest=token;
   try{
-   CaptureRequest.Builder still=device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);still.addTarget(reader.getSurface());controls(still);
+   CaptureRequest.Builder still=newRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);still.addTarget(reader.getSurface());controls(still);
    int[] noise=lens.info.get(CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES);
    if(noise!=null)for(int mode:noise)if(mode==CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY){still.set(CaptureRequest.NOISE_REDUCTION_MODE,mode);break;}
    int[] edges=lens.info.get(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES);
@@ -242,7 +251,7 @@ final class CameraController implements TextureView.SurfaceTextureListener {
  private void failPhoto(String message){String token=photoRequest;photoRequest=null;if(token!=null)listener.photoError(token,message);}
  private void fail(String message){String token=request;stop();listener.error(token,message);}
  void stop(){
-  generation++;wanted=false;failPhoto("Die Aufnahme wurde unterbrochen.");
+  generation++;wanted=false;previewReady=false;texture.setAlpha(0f);failPhoto("Die Aufnahme wurde unterbrochen.");
   if(session!=null){session.close();session=null;}if(device!=null){device.close();device=null;}if(reader!=null){reader.close();reader=null;}if(previewSurface!=null){previewSurface.release();previewSurface=null;}preview=null;
  }
  void destroy(){displays.unregisterDisplayListener(displayListener);stop();imageThread.quitSafely();}

@@ -20,7 +20,7 @@ Die deutsche Anleitung steht in [ENTWICKLUNG.md](ENTWICKLUNG.md). Der Quellcode 
 
 ## Android test app
 
-`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.7.0 (11), Android 10+ (API 29), target API 35.
+`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.7.1 (12), Android 10+ (API 29), target API 35.
 
 - Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. Photo mode uses Camera2; Video mode uses WebRTC.
 - Lens selector lists public cameras and physical cameras exposed through Android's logical-camera API. Unsupported physical stream combinations produce a recoverable lens-selection error. Manufacturer-private lenses are not bypassed.
@@ -123,3 +123,9 @@ Validated clean video: MP4 720×1280, decoded camera-center RGB [32,145,80], no 
 - Video requests 1920×1080 source frames, exports portrait 1080×1920 or side-by-side 1920×1920 at 8 Mbps, and draws at most about 30 times/sec. Output uses aspect-preserving contain, so landscape sources retain letterboxing. Device-reported video sources and continuous track zoom are selectable if WebView exposes them. Unsupported zoom is explained, not simulated as UI scaling. Clips stop at 60 seconds or roughly 45 MB, whichever comes first.
 - Validation: TypeScript and 10 geometry/alignment tests; native compile and APK signature verification; mobile browser fixture checks photo zoom presets, arbitrary zoom and lens switching. Real browser MediaRecorder fixture exports decoded 1080×1920 clean video and 1920×1920 side-by-side video with correct source colors, and checks asynchronous track zoom. Fixtures mock camera hardware/Android bridge; Samsung lens availability, optical transitions, and real image quality still require a device test.
 - Camera2 zoom semantics: https://developer.android.com/reference/android/hardware/camera2/CaptureRequest#CONTROL_ZOOM_RATIO
+
+## Android 1.7.1 — physical-lens startup fix
+
+Physical capture requests now include their physical camera ID when creating the builder, as required for per-physical zoom keys. Preview readiness waits for the first completed camera frame, with a bounded startup timeout. Closing or failing the camera hides its retained TextureView frame so stale imagery cannot appear behind an inactive-camera message. Optional non-finite exposure metadata is sanitized before JSON serialization, and logical request controls use their logical camera capabilities. Error text has an opaque background and includes the exception type for diagnosis.
+
+Validation: Java metadata regression checks, ten existing TypeScript geometry/alignment tests, TypeScript compilation, native Android build and APK signature verification. No physical Samsung device test was available.
