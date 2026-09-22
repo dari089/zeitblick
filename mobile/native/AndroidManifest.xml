@@ -1,8 +1,9 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="de.zeitblick.kamera" android:versionCode="9" android:versionName="1.5.0">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="de.zeitblick.kamera" android:versionCode="10" android:versionName="1.6.0">
  <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35" />
  <uses-permission android:name="android.permission.INTERNET" />
  <uses-permission android:name="android.permission.CAMERA" />
  <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+ <queries><intent><action android:name="android.intent.action.PICK"/><data android:mimeType="image/*"/></intent><intent><action android:name="android.intent.action.PICK"/><data android:mimeType="video/*"/></intent></queries>
  <application android:label="Zeitblick" android:icon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:usesCleartextTraffic="false" android:debuggable="false" android:enableOnBackInvokedCallback="false" android:supportsRtl="true">
   <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden|uiMode" android:windowSoftInputMode="adjustResize">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>

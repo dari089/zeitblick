@@ -1,4 +1,5 @@
 "use client";
+import { VideoWorkspace } from "@/components/video-workspace";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Check, Eye, EyeOff, Grid3X3, ImagePlus, Layers2, LoaderCircle, LockKeyhole, Move, RotateCcw, RotateCw, ShieldCheck, Smartphone, SwitchCamera, X, ZoomIn, SlidersHorizontal, Maximize2, Minimize2, ChevronDown, Columns2 } from "lucide-react";
@@ -21,8 +22,8 @@ type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<
 const INITIAL: Transform = { x: 0, y: 0, scale: 1, rotation: 0 };
 
 export default function Home() {
-  const [workMode, setWorkMode] = useState<'camera'|'align'>(() => {try{return typeof window!=='undefined'&&localStorage.getItem('zeitblick-mode')==='align'?'align':'camera';}catch{return 'camera';}});
-  function chooseMode(mode:'camera'|'align'){try{localStorage.setItem('zeitblick-mode',mode);}catch{}setWorkMode(mode);}
+  const [workMode, setWorkMode] = useState<'camera'|'align'|'video'>(() => {try{return typeof window!=='undefined'&&localStorage.getItem('zeitblick-mode')==='video'?'video':typeof window!=='undefined'&&localStorage.getItem('zeitblick-mode')==='align'?'align':'camera';}catch{return 'camera';}});
+  function chooseMode(mode:'camera'|'align'|'video'){try{localStorage.setItem('zeitblick-mode',mode);}catch{}setWorkMode(mode);}
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const requestRef = useRef(0);
@@ -185,7 +186,7 @@ export default function Home() {
   // not loop: retry stays an explicit action until the next foreground session.
   useEffect(() => {
     if (!nativeApp) return;
-    if (!nativeActive || reviewOpen || workMode === "align") { stopCamera(); return; }
+    if (!nativeActive || reviewOpen || workMode !== "camera") { stopCamera(); return; }
     void startCamera();
     return stopCamera;
   }, [nativeApp, nativeActive, reviewOpen, cameraProfile, selectedLens, workMode]);
@@ -225,7 +226,7 @@ export default function Home() {
   useEffect(() => {
     async function result(event: Event) {
       const data = (event as CustomEvent).detail;
-      if (String(data?.requestId).startsWith("align-")) return;
+      if (/^(align-|video-)/.test(String(data?.requestId))) return;
       if (data?.requestId !== String(sourceRequestRef.current)) { if (data?.url) androidBridge()?.releaseReference?.(data.url); return; }
       if (data?.cancelled) { setLoadingImage(false); return; }
       if (data?.error) { setLoadingImage(false); toast.error(data.error); return; }
@@ -369,6 +370,7 @@ export default function Home() {
     return () => lifecycle.abort();
   }, []);
 
+  if(workMode==='video')return <VideoWorkspace onBack={()=>chooseMode('camera')}/>;
   if(workMode==='align')return <AlignmentEditor onBack={()=>chooseMode('camera')}/>;
   return (
     <div className={`camera-app ${nativeApp ? "native-app" : ""}`}>
@@ -383,7 +385,7 @@ export default function Home() {
           <button className={`icon-button ${settingsOpen ? "selected" : ""}`} onClick={() => setSettingsOpen(true)} aria-label="Einstellungen öffnen" title="Einstellungen"><SlidersHorizontal size={21} /></button>
         </div>
       </header>
-      <div className="work-mode-bar"><span>Kamera</span><button onClick={()=>{stopCamera();chooseMode('align');}}>Bilder ausrichten <span>↗</span></button></div>
+      <div className="work-mode-bar"><span>Kamera</span><button onClick={()=>{stopCamera();chooseMode('align');}}>Bilder ausrichten <span>↗</span></button><button onClick={()=>{stopCamera();chooseMode('video');}}>Video</button></div>
       <main className={`camera-stage ${comparison === "side" && reference ? "side-by-side" : ""} ${draggingFile ? "file-over" : ""}`} aria-label="Kamera und Sucher" onDragOver={event => { event.preventDefault(); setDraggingFile(true); }} onDragLeave={() => setDraggingFile(false)} onDrop={event => { event.preventDefault(); setDraggingFile(false); const file = event.dataTransfer.files[0]; if (file) loadReference(file); }}>
         {comparison === 'side' && reference && placement && <div className="reference-pane" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onLostPointerCapture={onPointerEnd}>
           <img className="overlay-image" src={reference.url} alt="Vorlage nebeneinander" draggable={false} style={{width:placement.width,height:placement.height,left:'50%',top:'50%',transform:`translate(-50%,-50%) translate3d(${transform.x*frameWidth}px,${transform.y*frameHeight}px,0) rotate(${transform.rotation}deg) scale(${transform.scale})`}} />

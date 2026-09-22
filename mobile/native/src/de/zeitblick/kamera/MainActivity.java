@@ -100,12 +100,24 @@ public final class MainActivity extends Activity {
    @Override public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params) {
     if(fileCallback!=null)fileCallback.onReceiveValue(null);
     fileCallback=callback;
-    Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT); choose.setType("image/*");choose.addCategory(Intent.CATEGORY_OPENABLE);
+    String mime="image/*";for(String accept:params.getAcceptTypes()){if(accept!=null&&accept.startsWith("video/")){mime="video/*";break;}}
+    Intent choose=mediaChooser(mime);
     try {startActivityForResult(choose,200);} catch(Exception e){fileCallback.onReceiveValue(null);fileCallback=null;}
     return true;
    }
   });
   web.loadUrl(ORIGIN+"/index.html");
+ }
+ private Intent mediaChooser(String mime){
+  Intent content=new Intent(Intent.ACTION_GET_CONTENT);content.setType(mime);content.addCategory(Intent.CATEGORY_OPENABLE);content.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+  Intent chooser=Intent.createChooser(content,mime.startsWith("video/")?"Video auswählen":"Bild auswählen");
+  Intent gallery=new Intent(Intent.ACTION_PICK);gallery.setDataAndType(mime.startsWith("video/")?MediaStore.Video.Media.EXTERNAL_CONTENT_URI:MediaStore.Images.Media.EXTERNAL_CONTENT_URI,mime);gallery.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+  ArrayList<Intent> choices=new ArrayList<>();
+  for(android.content.pm.ResolveInfo info:getPackageManager().queryIntentActivities(gallery,0)){
+   if(info.activityInfo!=null&&info.activityInfo.exported){Intent explicit=new Intent(gallery);explicit.setComponent(new android.content.ComponentName(info.activityInfo.packageName,info.activityInfo.name));choices.add(explicit);}
+  }
+  if(!choices.isEmpty())chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS,choices.toArray(new Intent[0]));
+  return chooser;
  }
  private JSONObject json(String key,Object value){JSONObject result=new JSONObject();try{result.put(key,value);}catch(Exception ignored){}return result;}
  private JSONObject result(String id,String error){JSONObject value=json("requestId",id);try{value.put("error",error);}catch(Exception ignored){}return value;}
@@ -176,7 +188,7 @@ public final class MainActivity extends Activity {
   @JavascriptInterface public void pickReference(String requestId){runOnUiThread(() -> {
    if(pickingReference||isFinishing()||isDestroyed())return;
    pickingReference=true;referenceRequest=requestId;
-   Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT);choose.setType("image/*");choose.addCategory(Intent.CATEGORY_OPENABLE);
+   Intent choose=mediaChooser("image/*");
    try{startActivityForResult(choose,201);}catch(Exception e){pickingReference=false;emitReference(null,false,"Die Bildauswahl konnte nicht geöffnet werden.");}
   });}
   @JavascriptInterface public void releaseReference(String url){references.release(url);}

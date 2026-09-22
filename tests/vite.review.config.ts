@@ -7,6 +7,6 @@ export default mergeConfig(mobile, {
   publicDir: false,
   build: {
     outDir: '../public/__review-check',
-    rollupOptions: { input: {alignment:fileURLToPath(new URL('./alignment-browser.html', import.meta.url)),review:fileURLToPath(new URL('./review-browser.html', import.meta.url)),native:fileURLToPath(new URL('./native-browser.html', import.meta.url))} },
+    rollupOptions: { input: {video:fileURLToPath(new URL('./video-browser.html', import.meta.url)),alignment:fileURLToPath(new URL('./alignment-browser.html', import.meta.url)),review:fileURLToPath(new URL('./review-browser.html', import.meta.url)),native:fileURLToPath(new URL('./native-browser.html', import.meta.url))} },
   },
 });

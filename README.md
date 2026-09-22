@@ -16,7 +16,7 @@ Mobile-first overlay camera for matching a historical reference to a present-day
 
 ## Android test app
 
-`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.5.0 (9), Android 10+ (API 29), target API 35.
+`mobile/` contains a standalone Android WebView shell and the same frontend, bundled locally for offline use. Package: `de.zeitblick.kamera`, version 1.6.0 (10), Android 10+ (API 29), target API 35.
 
 - Native Camera2 preview and still JPEG capture through a TextureView behind the control UI. The APK no longer uses WebRTC camera capture.
 - Lens selector lists public cameras and physical cameras exposed through Android's logical-camera API. Unsupported physical stream combinations produce a recoverable lens-selection error. Manufacturer-private lenses are not bypassed.
@@ -34,7 +34,7 @@ Build the native web bundle, then pass installed official Android build tools (3
 
 ```sh
 node node_modules/vite/bin/vite.js build --config mobile/vite.config.ts
-python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.5.0.apk
+python3 mobile/build-apk.py /path/to/build-tools/35.0.0 /path/to/platforms/android-35/android.jar /path/to/ecj.jar /private/path/zeitblick-test.keystore /path/to/Zeitblick-1.6.0.apk
 ```
 
 The builder uses Java 17, ECJ Java 8 bytecode, D8, aapt2, zipalign and apksigner. It verifies the signed APK. If the specified test key does not exist, it creates one with alias `androiddebugkey` and test password `android`.
@@ -98,3 +98,15 @@ Automatic search appends matches instead of replacing manual work. Edited or man
 Regional search retains existing anchors and supports up to 64 pairs. Frames can be resized, moved or newly drawn outside the existing rectangle. It accepts eight RANSAC inliers for regional searches while preserving mutual matching, inlier-ratio and spread checks. Projective validation is applied to the merged full-image geometry instead of extrapolating a cropped-region matrix beyond the area used for matching. Errors and successes are surfaced as toasts and status text; unrelated or highly changed photos can still require manual pairs.
 
 1.5.0 validation: production mobile fixture verified a manual correction retained through regional search (32 applied pairs, including one manual), different search bounds, side-by-side visibility, popup placement, clearing all points and Undo restoring them. The final popup JPEG save was tested through the decoding native-storage double. Nine geometry/capture tests and TypeScript checking passed. Actual Android hardware testing is not available.
+
+## Video workspace and gallery picker 1.6.0
+
+The Video tab offers filming with a still-image/video reference and comparison of two existing videos. Both modes support opacity overlay and side-by-side composition, reference drag/scale/rotation, playback/seeking and (for two videos) a current-video time offset. The live video branch uses a real WebRTC stream drawn into canvas; the existing native Camera2 photo mode is stopped while it is active. Front/rear switching is available in Video; the physical-lens controls remain in the Photo camera.
+
+Camera recording is clean by default, with an explicit switch to bake in the reference or side-by-side composition. Comparison recording saves the shown composition. Clips are silent, limited to 60 seconds and a bounded encoded size, 720×1280 for overlay/clean or 1280×1280 for side-by-side, with contain fitting to avoid stretching. The local WebView's MediaRecorder selects MP4/H.264 if supported, otherwise WebM. A playable review precedes explicit gallery saving. Backgrounding stops recording and camera tracks; export/saving can fail if available memory/storage or device codecs are insufficient. Original videos are not modified. Imported media and unsaved recordings are held for this session only.
+
+The Android picker now honors image-only and video-only accept filters, uses ACTION_GET_CONTENT, and offers installed ACTION_PICK gallery handlers as chooser alternatives. This allows compatible Samsung Gallery activities to appear without hard-coding its package or requesting broad media-library permissions. Image selections still use native ImageDecoder for HEIC. Video playback depends on the Android WebView codec; MP4/H.264 is the interoperability fallback. Samsung resolver behavior requires physical-device verification.
+
+Video tests: browser fixture supplies generated moving clips and a synthetic camera stream, while the actual UI/canvas/MediaRecorder run in the production bundle. Its storage double decodes saved videos and reports dimensions, duration and center pixel so clean/composite output can be distinguished. The fixture does not validate physical cameras or Samsung Gallery. Aspect-fit tests cover portrait and landscape media.
+
+Validated clean video: MP4 720×1280, decoded camera-center RGB [32,145,80], no blue reference contribution despite visible preview overlay. Two-video side-by-side recording was exercised with a 0.2-second source offset. TypeScript and ten geometry/capture/aspect tests passed; Android compilation and signature verification passed.
