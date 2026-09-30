@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {homography,project,mapping,warp,IDENTITY} from '../lib/alignment.ts';
+import {guidedMatches} from '../lib/alignment-guided.ts';
 const corners=[{x:.05,y:.05},{x:.95,y:.05},{x:.95,y:.95},{x:.05,y:.95},{x:.4,y:.35},{x:.6,y:.7}];
 const h=[.84,.12,.07,-.08,.91,.08,.13,-.06,1];
 test('four and overdetermined point pairs recover perspective including skew and stretch',()=>{
@@ -29,4 +30,18 @@ test('missing source areas stay transparent, never fabricated or wrapped',()=>{
  const source={width:4,height:4,data:new Uint8ClampedArray(64).fill(255)};
  const result=warp(source,4,4,[1,0,2,0,1,0,0,0,1],[],false);
  assert.ok(result.data.every(v=>v===0));
+});
+test('manual anchors guide additional feature matches without replacing or moving them',()=>{
+ const anchors=corners.slice(0,4).map(a=>({a,b:project(h,a),source:'manual'}));
+ const good={a:{x:.5,y:.48},b:project(h,{x:.5,y:.48})};
+ const wrong={a:{x:.56,y:.5},b:{x:.2,y:.8}};
+ assert.deepEqual(guidedMatches([good,wrong],anchors,false),[good]);
+ assert.equal(anchors.length,4);
+});
+test('local anchor displacement steers nearby candidates',()=>{
+ const anchors=corners.slice(0,4).map(a=>({a,b:{...a},source:'manual'}));
+ anchors.push({a:{x:.5,y:.5},b:{x:.6,y:.5},source:'manual'});
+ const good={a:{x:.53,y:.5},b:{x:.625,y:.5}};
+ const wrong={a:{x:.53,y:.5},b:{x:.53,y:.5}};
+ assert.deepEqual(guidedMatches([good,wrong],anchors,true,IDENTITY),[good]);
 });
