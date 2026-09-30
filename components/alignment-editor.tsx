@@ -118,11 +118,7 @@ export function AlignmentEditor({onBack}:{onBack:()=>void}){
   try{
    const prepare=(image:EditorImage,region:Crop)=>{const bounds=cropBounds(image.canvas.width,image.canvas.height,region),canvas=cropCanvas(image.canvas,region,1600);return {data:pixels(canvas,1600),bounds};};
    const ra=regional?prepare(a,regions.a):null,rb=regional?prepare(b,regions.b):null;
-   const normalized=(p:Point,bounds:ReturnType<typeof cropBounds>,image:EditorImage)=>({x:(p.x*(image.canvas.width-1)-bounds.x)/Math.max(1,bounds.width-1),y:(p.y*(image.canvas.height-1)-bounds.y)/Math.max(1,bounds.height-1)});
-   const manual=state.pairs.filter(p=>p.source==='manual');
-   const anchors=manual.length>=4?(ra&&rb?manual.map(p=>({a:normalized(p.a,ra.bounds,a),b:normalized(p.b,rb.bounds,b),source:'manual' as const})).filter(p=>[p.a.x,p.a.y,p.b.x,p.b.y].every(v=>v>=0&&v<=1)):manual):[];
-   const guided=anchors.length>=4;
-   const result=await alignmentJob<{h:Matrix;pairs:Pair[];matches:number;total:number}>({kind:'auto',regional,a:ra?.data||pixels(a.canvas,1100),b:rb?.data||pixels(b.canvas,1100),anchors:guided?anchors:[],local:state.local&&!regional,base:state.local&&!regional?state.base:undefined},controller.signal);
+   const result=await alignmentJob<{h:Matrix;pairs:Pair[];matches:number;total:number}>({kind:'auto',regional,a:ra?.data||pixels(a.canvas,1100),b:rb?.data||pixels(b.canvas,1100)},controller.signal);
    if(controller.signal.aborted)return;
    if(regional&&ra&&rb){
     const restore=(p:Point,bounds:ReturnType<typeof cropBounds>,image:EditorImage)=>({x:(bounds.x+p.x*(bounds.width-1))/(image.canvas.width-1),y:(bounds.y+p.y*(bounds.height-1))/(image.canvas.height-1)});
@@ -133,12 +129,12 @@ export function AlignmentEditor({onBack}:{onBack:()=>void}){
     const added=pairs.length-state.pairs.length;
     if(!added)throw Error(state.pairs.length>=64?'64 Punktpaare erreicht. Lösche zuerst ein nicht benötigtes Paar.':'Keine zusätzlichen, ausreichend entfernten Punkte gefunden. Wähle einen anderen Bereich.');
     if(!state.local)homography(pairs);
-    change({...state,pairs});setSelected(null);setPending(null);setPointTool('browse');setMessage(added+' zusätzliche Punktpaare gefunden'+(guided?' · an deinen Punkten orientiert':'')+'. Jetzt Ausrichten drücken.');toast.success(added+' zusätzliche Punktpaare gefunden.');return;
+    change({...state,pairs});setSelected(null);setPending(null);setPointTool('browse');setMessage(added+' zusätzliche Punktpaare gefunden. Jetzt Ausrichten drücken.');toast.success(added+' zusätzliche Punktpaare gefunden.');return;
    }
    const pairs=[...state.pairs];
    for(const pair of result.pairs)if(pairs.length<64&&!pairs.some(q=>Math.hypot(q.a.x-pair.a.x,q.a.y-pair.a.y)<.008||Math.hypot(q.b.x-pair.b.x,q.b.y-pair.b.y)<.008))pairs.push({...pair,source:'auto'});
    const added=pairs.length-state.pairs.length;if(!added)throw Error('Keine neuen Punkte gefunden. Die vorhandenen Punkte kannst du mit Ausrichten anwenden.');
-   change({...state,pairs,base:state.pairs.length?state.base:result.h});setPointTool('browse');setSelected(null);setPending(null);setMessage(added+' automatische Punktpaare ergänzt'+(guided?' · an deinen Punkten orientiert':'')+'. Jetzt Ausrichten drücken.');toast.success(added+' automatische Punktpaare ergänzt.');
+   change({...state,pairs,base:state.pairs.length?state.base:result.h});setPointTool('browse');setSelected(null);setPending(null);setMessage(added+' automatische Punktpaare ergänzt. Jetzt Ausrichten drücken.');toast.success(added+' automatische Punktpaare ergänzt.');
   }catch(e){if(!controller.signal.aborted){setError((e as Error).message);toast.error((e as Error).message);}}
   finally{if(!controller.signal.aborted)setBusy('');}
  }
@@ -198,7 +194,7 @@ export function AlignmentEditor({onBack}:{onBack:()=>void}){
    {a&&b&&<>
     <div className="align-tabs"><button className={tab==='points'?'active':''} onClick={()=>setTab('points')}>Punkte · {state.pairs.length}</button><button className={tab==='preview'?'active':''} disabled={!ready} onClick={applyAlignment}>Vergleichen</button></div>
     {tab==='points'?<>
-     <div className="point-search"><button disabled={state.pairs.length>=64} onClick={()=>void automatic()}><Sparkles size={16}/> {state.pairs.filter(p=>p.source==='manual').length>=4?'Weitere Punkte anhand meiner Punkte suchen':'Automatische Punkte ergänzen'}</button></div>
+     <div className="point-search"><button disabled={state.pairs.length>=64} onClick={()=>void automatic()}><Sparkles size={16}/> Automatische Punkte ergänzen</button></div>
      <div className="point-tools">
       <button className={pointTool==='add'?'active':''} onClick={()=>{setPointTool(pointTool==='add'?'browse':'add');setSelected(null);setPending(null);setActiveSide('a');}}>+ Punktpaar</button>
       <button className={pointTool==='edit'?'active':''} onClick={()=>{if(pointTool==='edit'){setPointTool('browse');setSelected(null);}else if(selected!==null)selectPoint(selected);else toast.info('Tippe eine nummerierte Markierung im Bild an. Danach kannst du sie ziehen.');}}>{pointTool==='edit'?'Bearbeiten fertig':'Punkt bearbeiten'}</button>

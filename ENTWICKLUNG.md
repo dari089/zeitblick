@@ -1,6 +1,6 @@
 # Zeitblick selbst weiterentwickeln
 
-Aktueller Stand: Android 1.7.2, Paket `de.zeitblick.kamera`.
+Aktueller Stand: Android 1.7.1, Paket `de.zeitblick.kamera`.
 
 ## Wo ist welcher Code?
 
@@ -38,11 +38,6 @@ node node_modules/vite/bin/vite.js --config mobile/vite.config.ts
 Die Browseransicht ersetzt keinen Test der nativen Camera2-Funktionen auf dem Handy.
 
 ## APK bauen
-
-### Android 1.7.2 — durch manuelle Punkte geführte Suche
-
-Vier oder mehr manuelle Punktpaare begrenzen die automatische AKAZE-Suche auf Treffer nahe der durch diese Punkte vorgegebenen Perspektive. Bei lokaler Verformung folgt die Suche auch den gesetzten lokalen Ankern. Die manuellen Paare bleiben erhalten; zusätzliche Treffer werden weiter mit RANSAC geprüft. In zwei ausgewählten Bildbereichen müssen mindestens vier manuelle Paare innerhalb beider Rahmen liegen, sonst läuft die normale Bereichssuche. Nach der Suche Ausrichten drücken und die Gebäudekanten kontrollieren. Bei stark veränderten Fassaden können Bilddetails fehlen.
-
 
 Passe die fünf Pfade an deinen Rechner an:
 
