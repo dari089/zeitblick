@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.ColorSpace;
 import android.graphics.ImageDecoder;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import android.webkit.WebResourceResponse;
@@ -31,6 +32,15 @@ final class ReferenceImages {
   try(Cursor cursor=resolver.query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)) {
    if(cursor!=null&&cursor.moveToFirst()&&!cursor.isNull(0)) name=cursor.getString(0);
   }catch(RuntimeException ignored){}
+  // The resized cache image drops EXIF; read only the focal length from the original URI first.
+  int focal35=0;
+  try(InputStream original=resolver.openInputStream(uri)) {
+   if(original!=null){
+    ExifInterface exif=new ExifInterface(original);
+    int value=exif.getAttributeInt(ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM,0);
+    if(value>=5&&value<=400)focal35=value;
+   }
+  }catch(Exception ignored){} // Metadata is optional; decoding the selected picture must still work.
   Bitmap bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver,uri),(decoder,info,source) -> {
    int[] size = ImageSizing.fit(info.getSize().getWidth(),info.getSize().getHeight());
    decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);
@@ -47,6 +57,7 @@ final class ReferenceImages {
    }
    JSONObject result=new JSONObject(); result.put("url",PREFIX+token); result.put("name",name);
    result.put("width",bitmap.getWidth()); result.put("height",bitmap.getHeight());
+   if(focal35>0)result.put("focal35",focal35);
    files.put(token,output); return result;
   } catch(Exception error) {if(output!=null)output.delete();throw error;}
   finally {bitmap.recycle();}

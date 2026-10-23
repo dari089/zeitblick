@@ -15,8 +15,9 @@ import { Toaster, toast } from "sonner";
 import { androidBridge, openNativeCamera, captureNativePhoto, type NativeLens, type NativeCamera } from "@/lib/android";
 import { useRafState } from "@/lib/use-raf-state";
 import { coverCrop, overlayPlacement, composePhoto, paintOverlay, type Transform } from "@/lib/capture";
+import { matchReferenceLens } from "@/lib/lens-match";
 
-type ReferenceImage = { url: string; name: string; width: number; height: number; image: HTMLImageElement };
+type ReferenceImage = { url: string; name: string; width: number; height: number; image: HTMLImageElement; focal35?: number };
 type CameraState = "idle" | "starting" | "ready" | "error";
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 const INITIAL: Transform = { x: 0, y: 0, scale: 1, rotation: 0 };
@@ -46,6 +47,8 @@ export default function Home() {
   const [cameraInfo, setCameraInfo] = useState<NativeCamera | null>(null);
   const [cameraZoom, setCameraZoom] = useState(1);
   const zoomMemory = useRef<{id:string;value:number}|null>(null);
+  const focalAppliedRequest = useRef<number | null>(null);
+  const [referenceFocal,setReferenceFocal] = useState<{request:number;mm:number}|null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [exposure, setExposure] = useState(0);
   const [nativeActive, setNativeActive] = useState(true);
@@ -212,6 +215,15 @@ export default function Home() {
     window.addEventListener('zeitblick-camera-result', interrupted);
     return () => {window.removeEventListener('zeitblick-zoom', zoomed);window.removeEventListener('zeitblick-cameras', update);window.removeEventListener('zeitblick-camera-result', interrupted);};
   }, []);
+  useEffect(() => {
+    if(!nativeApp||!referenceFocal||focalAppliedRequest.current===referenceFocal.request)return;
+    const match=matchReferenceLens(lenses,referenceFocal.mm);
+    if(!match)return;
+    focalAppliedRequest.current=referenceFocal.request;
+    zoomMemory.current={id:match.id,value:match.zoom};
+    if(cameraInfo?.id===match.id){changeCameraZoom(match.zoom);}else setSelectedLens(match.id);
+    toast.info(`Vorlage: ${referenceFocal.mm} mm · passende Kamera gewählt. Du kannst Linse und Zoom jederzeit ändern.`);
+  },[nativeApp,referenceFocal,lenses]);
   function changeCameraZoom(value: number) {
     const next=Math.max(cameraInfo?.zoomMin ?? 1,Math.min(cameraInfo?.zoomMax ?? 1,value));
     if(cameraInfo)zoomMemory.current={id:cameraInfo.id,value:next};setCameraZoom(next);androidBridge()?.setZoom?.(next);
@@ -223,11 +235,13 @@ export default function Home() {
     } else void startCamera(facing === 'environment' ? 'user' : 'environment');
   }
 
-  async function acceptReference(url: string, name: string, request: number) {
+  async function acceptReference(url: string, name: string, request: number, focal35?: number) {
     const img = new Image(); img.src = url; await img.decode();
     if (request !== sourceRequestRef.current) { URL.revokeObjectURL(url); androidBridge()?.releaseReference?.(url); return; }
     if (!img.naturalWidth || !img.naturalHeight) throw new Error('Ungültiges Bild');
-    setReference({ url, name, width: img.naturalWidth, height: img.naturalHeight, image: img });
+    const usableFocal=Number.isFinite(focal35)&&Number(focal35)>=5&&Number(focal35)<=400?focal35:undefined;
+    setReference({ url, name, width: img.naturalWidth, height: img.naturalHeight, image: img, focal35:usableFocal });
+    setReferenceFocal(usableFocal?{request,mm:usableFocal}:null);
     setTransform(INITIAL); setLocked(false); setOverlayVisible(true);
     toast.success('Vorlage geladen. Richte jetzt deinen Blick aus.');
   }
@@ -241,7 +255,7 @@ export default function Home() {
       if (data?.error) { setLoadingImage(false); toast.error(data.error); return; }
       if (typeof data?.url !== 'string' || !data.url.startsWith('https://appassets.androidplatform.net/reference/')) return;
       const request = sourceRequestRef.current;
-      try { await acceptReference(data.url, String(data.name || 'Vorlage'), request); }
+      try { await acceptReference(data.url, String(data.name || 'Vorlage'), request, Number(data.focal35)); }
       catch { androidBridge()?.releaseReference?.(data.url); toast.error('Die Vorlage konnte nicht geladen werden.'); }
       finally { if (request === sourceRequestRef.current) setLoadingImage(false); }
     }
@@ -274,6 +288,7 @@ export default function Home() {
     sourceRequestRef.current++;
     setLoadingImage(false);
     setReference(null);
+    setReferenceFocal(null);
     setSaveMode("clean");
     setTransform(INITIAL);
     setLocked(false);
@@ -417,7 +432,7 @@ export default function Home() {
         {cameraState !== "ready" && <div className={`camera-empty ${reference ? "with-reference" : ""}`}><div className="camera-empty-content"><span className="empty-camera-icon">{cameraState === "starting" ? <LoaderCircle className="spin" size={32} /> : cameraState === "error" ? <CameraOff size={32} strokeWidth={1.4} /> : <Camera size={36} strokeWidth={1.35} />}</span><h1>{cameraState === "starting" ? "Deine Kamera wird gestartet …" : cameraState === "error" ? "Noch kein Kamerabild" : "Damals im Blick."}</h1><p>{cameraState === "starting" ? nativeApp ? "Die Kamera öffnet sich automatisch." : "Bitte erlaube den Kamerazugriff in deinem Browser." : cameraError || (nativeApp ? "Die Kamera öffnet sich automatisch." : "Lege dein historisches Foto über die heutige Aussicht.")}</p>{(!nativeApp || cameraState === "error") && <button className="primary-button" onClick={() => cameraState === "starting" ? stopCamera() : startCamera()}>{cameraState === "starting" ? "Abbrechen" : <><Camera size={18} />{cameraState === "error" ? "Erneut versuchen" : "Kamera starten"}</>}</button>}<span className="camera-permission-note"><ShieldCheck size={13} />Privat und werbefrei</span></div></div>}
         {nativeApp && cameraState === 'ready' && <div className="camera-zoom-panel">
           <button className="zoom-toggle" onClick={()=>setZoomOpen(!zoomOpen)} aria-expanded={zoomOpen}>Kamera · {cameraZoom.toFixed(1)}×</button>
-          {zoomOpen && <div className="zoom-popover"><label>Kamera-Zoom · {cameraZoom.toFixed(2)}×<input aria-label="Kamera-Zoom" type="range" min={cameraInfo?.zoomMin ?? 1} max={cameraInfo?.zoomMax ?? 1} step={.01} value={cameraZoom} disabled={capturing || (cameraInfo?.zoomMax ?? 1)<=(cameraInfo?.zoomMin ?? 1)} onChange={e=>changeCameraZoom(+e.target.value)}/></label><div className="zoom-presets">{Array.from(new Set([cameraInfo?.zoomMin ?? 1,1,2,3,5,10])).filter(z=>z>=(cameraInfo?.zoomMin ?? 1)&&z<=(cameraInfo?.zoomMax ?? 1)).sort((a,b)=>a-b).map(z=><button key={z} disabled={capturing} aria-pressed={Math.abs(cameraZoom-z)<.02} onClick={()=>changeCameraZoom(z)}>{Number(z.toFixed(1))}×</button>)}</div>{(cameraInfo?.zoomMax ?? 1)<=1&&<small>Diese feste Linse bietet keinen Zoom. Wähle eine Auto-Kamera.</small>}<small>Zwei Finger zoomen die Kamera, wenn die Vorlage fixiert oder ausgeblendet ist.</small></div>}
+          {zoomOpen && <div className="zoom-popover"><label>Kamera-Zoom · {cameraZoom.toFixed(2)}×<input aria-label="Kamera-Zoom" type="range" min={cameraInfo?.zoomMin ?? 1} max={cameraInfo?.zoomMax ?? 1} step={.01} value={cameraZoom} disabled={capturing || (cameraInfo?.zoomMax ?? 1)<=(cameraInfo?.zoomMin ?? 1)} onChange={e=>changeCameraZoom(+e.target.value)}/></label><div className="zoom-presets">{Array.from(new Set([cameraInfo?.zoomMin ?? 1,1,2,3,5,10])).filter(z=>z>=(cameraInfo?.zoomMin ?? 1)&&z<=(cameraInfo?.zoomMax ?? 1)).sort((a,b)=>a-b).map(z=><button key={z} disabled={capturing} aria-pressed={Math.abs(cameraZoom-z)<.02} onClick={()=>changeCameraZoom(z)}>{Number(z.toFixed(1))}×</button>)}</div>{reference?.focal35&&<small>Vorlage: {reference.focal35} mm (Kleinbild). Startwert aus den Bilddaten; bei anderem Aufnahmeort selbst nachstellen.</small>}{(cameraInfo?.zoomMax ?? 1)<=1&&<small>Diese feste Linse bietet keinen Zoom. Wähle eine Auto-Kamera.</small>}<small>Zwei Finger zoomen die Kamera, wenn die Vorlage fixiert oder ausgeblendet ist.</small></div>}
         </div>}
         <div className="viewfinder-bottom"><span>{reference ? <>{locked ? <LockKeyhole size={13} /> : <Move size={13} />}{locked ? "Vorlage fixiert" : "Ziehen · zoomen · drehen"}</> : "Vorlage unten auswählen"}</span>{cameraState === "ready" && <span>{crop?.width} × {crop?.height}</span>}</div>
         </div>

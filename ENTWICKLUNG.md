@@ -1,6 +1,6 @@
 # Zeitblick selbst weiterentwickeln
 
-Aktueller Stand: Android 1.7.2, Paket `de.zeitblick.kamera`.
+Aktueller Stand: Android 1.7.3, Paket `de.zeitblick.kamera`.
 
 ## Wo ist welcher Code?
 
@@ -38,6 +38,11 @@ node node_modules/vite/bin/vite.js --config mobile/vite.config.ts
 Die Browseransicht ersetzt keinen Test der nativen Camera2-Funktionen auf dem Handy.
 
 ## APK bauen
+
+### Android 1.7.3 — Brennweite aus Vorlagen übernehmen
+
+Beim Import einer Bildvorlage liest Android die 35-mm-äquivalente EXIF-Brennweite aus der Originaldatei, bevor eine verkleinerte Kopie für die Anzeige entsteht. Ist ein gültiger Wert enthalten und meldet Camera2 Rücklinsen mit Brennweite, wählt die App eine optische Basis und stellt den verbleibenden Zoom ein. Anschließend bleiben Linse und Zoom manuell änderbar. Fehlt diese EXIF-Angabe (etwa bei vielen historischen Scans), wird die aktuelle Kamera nicht umgestellt. Der effektive Bildausschnitt hängt auch von Sensor-Crop, Bildbearbeitung, Position und Perspektive ab; die Einstellung ist ein Startwert und ersetzt das manuelle Ausrichten nicht.
+
 
 ### Android 1.7.2 — durch manuelle Punkte geführte Suche
 
